@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -10,4 +5,326 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ============================================================================
+// ENUMS (Strict states across all 4 Subsystems)
+// ============================================================================
+
+enum QcuMemberType {
+  STUDENT
+  FACULTY
+  STAFF
+}
+
+enum UserRole {
+  BUYER
+  SELLER
+  ADMIN
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum SellerType {
+  STUDENT_ENTERPRISE      // BSE OJT Businesses
+  RECOGNIZED_ORGANIZATION // QCU Student Orgs
+  INDEPENDENT_SELLER      // Enrolled QCU Students selling on their own
+}
+
+enum DeliveryMethod {
+  ROOM_TO_ROOM
+  PICKUP
+}
+
+enum PaymentMethod {
+  CASH
+  GCASH_PAYMONGO
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PENDING_CONFIRMATION
+  PREPARING
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  COMPLETED
+  CANCELLED
+}
+
+enum ComplaintStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+// ============================================================================
+// SUBSYSTEM 1: USER VERIFICATION & AUTHENTICATION
+// Assigned to: Vizconde & Manuel (Core WebAuthn by Dalupang)
+// ============================================================================
+
+model User {
+  id                  String             @id @default(uuid())
+  qcuIdNumber         String             @unique // e.g., "24-0001" (Account identifier)
+  email               String             @unique
+  fullName            String
+  memberType          QcuMemberType      // Faculty/Staff can only be BUYER
+  role                UserRole           @default(BUYER)
+
+  // Verification & Identity Data (RA 10173 protected - viewable by Admin only)
+  qcuIdPhotoUrl       String             // Submitted photo of QCU ID
+  liveSelfieUrl       String             // Captured via browser camera API
+  verificationStatus  VerificationStatus @default(PENDING)
+  rejectionReason     String?
+  verifiedByAdminId   String?
+  verifiedAt          DateTime?
+
+  // Fallback Auth (For devices without passkey support)
+  passwordHash        String?
+  otpCode             String?
+  otpExpiresAt        DateTime?
+  currentChallenge    String?            // Temporary challenge for WebAuthn registration/login
+
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  // Relations across Subsystems
+  passkeys            PasskeyCredential[]
+  sellerProfile       SellerProfile?
+  cart                Cart?
+  buyerOrders         Order[]            @relation("BuyerOrders")
+  sentMessages        OrderMessage[]
+  complaintsFiled     Complaint[]        @relation("Complainant")
+  auditLogs           AuditLog[]
+}
+
+model PasskeyCredential {
+  id                  String   @id // Credential ID from WebAuthn (Base64URL)
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicKey           Bytes    // Public key bytes
+  counter             BigInt   @default(0)
+  deviceType          String?  // "singleDevice" or "multiDevice"
+  backedUp            Boolean  @default(false)
+  transports          String[] // e.g., ["internal", "hybrid"]
+  deviceName          String?  // e.g., "Chrome on Android"
+  createdAt           DateTime @default(now())
+  lastUsedAt          DateTime?
+}
+
+model SellerProfile {
+  id                      String             @id @default(uuid())
+  userId                  String             @unique
+  user                    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sellerType              SellerType
+
+  // Verification Document URL (OJT Endorsement, Org Recognition, or Proof of Enrollment)
+  supportingDocumentUrl   String
+  verificationStatus      VerificationStatus @default(PENDING)
+  rejectionReason         String?
+
+  // PayMongo Sub-account Onboarding (Required for GCash; without it, Cash only)
+  paymongoSubAccountId    String?            @unique
+  isPaymongoVerified      Boolean            @default(false)
+
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  store                   Store?
+}
+
+// ============================================================================
+// SUBSYSTEM 2: MARKETPLACE & ENTERPRISE MANAGEMENT
+// Assigned to: Luarca & Ojeda
+// ============================================================================
+
+model Store {
+  id                  String             @id @default(uuid())
+  sellerProfileId     String             @unique
+  sellerProfile       SellerProfile      @relation(fields: [sellerProfileId], references: [id], onDelete: Cascade)
+  name                String             @unique
+  slug                String             @unique
+  description         String
+  logoUrl             String?
+  bannerUrl           String?
+  pickupLocation      String?            // Default campus pickup spot (e.g., "QCU Student Center Lobby")
+  isOpen              Boolean            @default(true)
+  approvalStatus      VerificationStatus @default(PENDING)
+
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  products            Product[]
+  orders              Order[]
+}
+
+model Category {
+  id                  String    @id @default(uuid())
+  name                String    @unique // e.g., "Food & Beverages", "Org Merchandise", "Academic Services"
+  slug                String    @unique
+  products            Product[]
+}
+
+model Product {
+  id                  String             @id @default(uuid())
+  storeId             String
+  store               Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  categoryId          String
+  category            Category           @relation(fields: [categoryId], references: [id])
+
+  name                String
+  description         String
+  price               Decimal            @db.Decimal(10, 2)
+  stockQuantity       Int                @default(0)
+  imageUrls           String[]
+  isAvailable         Boolean            @default(true)
+
+  // Subject to Administrator Approval before going live
+  approvalStatus      VerificationStatus @default(PENDING)
+  rejectionReason     String?
+
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  cartItems           CartItem[]
+  orderItems          OrderItem[]
+}
+
+// ============================================================================
+// SUBSYSTEM 3: ORDER, PAYMENT & DELIVERY MANAGEMENT
+// Assigned to: Reyes & Ponce (PayMongo Core by Dalupang)
+// ============================================================================
+
+model Cart {
+  id                  String     @id @default(uuid())
+  userId              String     @unique
+  user                User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items               CartItem[]
+  updatedAt           DateTime   @updatedAt
+}
+
+model CartItem {
+  id                  String   @id @default(uuid())
+  cartId              String
+  cart                Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId           String
+  product             Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity            Int      @default(1)
+
+  @@unique([cartId, productId])
+}
+
+model Order {
+  id                  String         @id @default(uuid())
+  orderNumber         String         @unique // e.g., "BZQ-20261023-0001"
+  buyerId             String
+  buyer               User           @relation("BuyerOrders", fields: [buyerId], references: [id])
+  storeId             String
+  store               Store          @relation(fields: [storeId], references: [id])
+
+  totalAmount         Decimal        @db.Decimal(10, 2)
+  paymentMethod       PaymentMethod
+  orderStatus         OrderStatus    @default(PENDING_CONFIRMATION)
+
+  // Campus Delivery or Pickup Details
+  deliveryMethod      DeliveryMethod
+  campusBuilding      String?        // e.g., "Academic Building 1 (Belmonte)"
+  campusRoomNumber    String?        // e.g., "Room 402"
+  pickupInstructions  String?
+  deliveryNotes       String?
+
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  items               OrderItem[]
+  payment             PaymentTransaction?
+  messages            OrderMessage[]
+  complaints          Complaint[]
+}
+
+model OrderItem {
+  id                  String   @id @default(uuid())
+  orderId             String
+  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId           String
+  product             Product  @relation(fields: [productId], references: [id])
+  productNameSnapshot String   // Snapshot in case seller renames product later
+  unitPriceSnapshot   Decimal  @db.Decimal(10, 2)
+  quantity            Int
+  subtotal            Decimal  @db.Decimal(10, 2)
+}
+
+model PaymentTransaction {
+  id                      String        @id @default(uuid())
+  orderId                 String        @unique
+  order                   Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount                  Decimal       @db.Decimal(10, 2)
+  method                  PaymentMethod
+  status                  PaymentStatus @default(PENDING)
+
+  // PayMongo Specific Fields (Null if CASH)
+  paymongoCheckoutId      String?       @unique
+  paymongoPaymentIntentId String?       @unique
+  sellerSubAccountId      String?       // Where the split payment was routed
+  webhookPayload          Json?         // Raw PayMongo confirmation log for Admin monitoring
+  paidAt                  DateTime?
+
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+}
+
+model OrderMessage {
+  id                  String   @id @default(uuid())
+  orderId             String
+  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  senderId            String
+  sender              User     @relation(fields: [senderId], references: [id])
+  message             String
+  createdAt           DateTime @default(now())
+}
+
+// ============================================================================
+// SUBSYSTEM 4: PLATFORM MANAGEMENT & ANALYTICS
+// Assigned to: Guades & Castro
+// ============================================================================
+
+model Complaint {
+  id                  String          @id @default(uuid())
+  complainantId       String
+  complainant         User            @relation("Complainant", fields: [complainantId], references: [id])
+  orderId             String?
+  order               Order?          @relation(fields: [orderId], references: [id])
+  subject             String
+  description         String
+  evidenceUrls        String[]
+  status              ComplaintStatus @default(OPEN)
+  adminResolutionNote String?
+  resolvedByAdminId   String?
+  resolvedAt          DateTime?
+
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+}
+
+model AuditLog {
+  id                  String   @id @default(uuid())
+  actorId             String
+  actor               User     @relation(fields: [actorId], references: [id])
+  subsystem           String   // "AUTH", "MARKETPLACE", "ORDERS", "ADMIN"
+  action              String   // e.g., "APPROVED_USER_ID", "APPROVED_PRODUCT", "DISPUTE_RESOLVED"
+  targetId            String?  // ID of the User, Store, Product, or Order affected
+  details             Json?
+  ipAddress           String?
+  createdAt           DateTime @default(now())
 }
