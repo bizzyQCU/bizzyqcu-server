@@ -12,14 +12,4 @@ export class MarketplaceController {
     });
   });
 
-  static getProducts = asyncHandler(async (req: Request, res: Response) => {
-    const products = await MarketplaceService.getActiveProducts(
-      req.query as any
-    );
-    res.status(200).json({
-      success: true,
-      count: products.length,
-      data: products,
-    });
-  });
 }

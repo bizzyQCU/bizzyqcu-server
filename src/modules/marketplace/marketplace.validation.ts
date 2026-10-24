@@ -13,17 +13,3 @@ export const createProductSchema = z.object({
       .min(1, "At least 1 product image is required"),
   }),
 });
-
-export const getProductsQuerySchema = z.object({
-  query: z.object({
-    search: z.string().optional(),
-    categoryId: z.string().uuid().optional(),
-    sellerType: z
-      .enum([
-        "STUDENT_ENTERPRISE",
-        "RECOGNIZED_ORGANIZATION",
-        "INDEPENDENT_SELLER",
-      ])
-      .optional(),
-  }),
-});

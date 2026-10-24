@@ -1,23 +1,13 @@
 import { Router } from "express";
 import { MarketplaceController } from "./marketplace.controller";
 import { validate } from "../../middlewares/validate.middleware";
-import {
-  createProductSchema,
-  getProductsQuerySchema,
-} from "./marketplace.validation";
+import { createProductSchema } from "./marketplace.validation";
+import catalogRoutes from "./catalog.routes";
 
 const router = Router();
 
-router.get(
-  "/products",
-  validate(getProductsQuerySchema),
-  MarketplaceController.getProducts
-);
+router.post("/products", validate(createProductSchema), MarketplaceController.createProduct);
 
-router.post(
-  "/products",
-  validate(createProductSchema),
-  MarketplaceController.createProduct
-);
+router.use(catalogRoutes);
 
 export default router;
