@@ -1,4 +1,4 @@
-import { prisma, SellerType } from "../../config/db";
+import { prisma } from "../../config/db";
 import { AppError } from "../../utils/AppError";
 
 export class MarketplaceService {
@@ -30,7 +30,4 @@ export class MarketplaceService {
       },
     });
   }
-
-  // Notable Member (Luarca): Dynamic Search & Multi-Parameter Filtering
- 
 }

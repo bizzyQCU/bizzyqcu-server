@@ -13,3 +13,6 @@ node_modules
 skills-lock.json
 
 Prompt.md
+
+# IDE & Editor cache
+.vs/

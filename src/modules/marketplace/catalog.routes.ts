@@ -17,7 +17,6 @@ router.get("/products", validate(searchProductsSchema), CatalogController.search
 // Seller-only
 const seller = [requireAuth, requireRole("SELLER")];
 
-router.get("/products", validate(searchProductsSchema), CatalogController.searchProducts);
 router.patch("/products/:id/stock", ...seller, validate(setStockSchema), CatalogController.setStock);
 router.patch(
   "/products/:id/availability",

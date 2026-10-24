@@ -5,6 +5,7 @@ import {
   OrderStatus,
 } from "../../config/db";
 import { AppError } from "../../utils/AppError";
+import { InventoryService } from "../marketplace/inventory.service";
 
 export class OrdersService {
   // Support Member (Ponce): Get User's Orders
@@ -32,7 +33,7 @@ export class OrdersService {
     deliveryNotes?: string;
     items: { productId: string; quantity: number }[];
   }) {
-    // 1. Fetch product prices and verify stock
+    // 1. Fetch product prices and verify availability
     const productIds = data.items.map((i) => i.productId);
     const products = await prisma.product.findMany({
       where: {
@@ -54,9 +55,6 @@ export class OrdersService {
     let totalAmount = 0;
     const orderItemsData = data.items.map((item) => {
       const prod = productMap.get(item.productId)!;
-      if (prod.stockQuantity < item.quantity) {
-        throw new AppError(`Insufficient stock for product "${prod.name}".`, 400);
-      }
       const unitPrice = Number(prod.price);
       const subtotal = unitPrice * item.quantity;
       totalAmount += subtotal;
@@ -74,14 +72,9 @@ export class OrdersService {
       1000 + Math.random() * 9000
     )}`;
 
-    // 2. Transaction: Deduct stock and create order
+    // 2. Transaction: Atomically deduct stock via Subsystem 2 InventoryService and create order
     return await prisma.$transaction(async (tx: any) => {
-      for (const item of data.items) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stockQuantity: { decrement: item.quantity } },
-        });
-      }
+      await InventoryService.deductStock(tx, data.items);
 
       return await tx.order.create({
         data: {
@@ -118,10 +111,24 @@ export class OrdersService {
     });
   }
 
-  // Update status
+  // Update status (Restores stock if order is cancelled)
   static async updateStatus(orderId: string, status: OrderStatus) {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new AppError("Order not found.", 404);
+
+    if (
+      status === "CANCELLED" &&
+      order.orderStatus !== "CANCELLED" &&
+      order.orderStatus !== "COMPLETED"
+    ) {
+      return await prisma.$transaction(async (tx: any) => {
+        await InventoryService.restoreOrderStock(tx, orderId);
+        return await tx.order.update({
+          where: { id: orderId },
+          data: { orderStatus: status },
+        });
+      });
+    }
 
     return await prisma.order.update({
       where: { id: orderId },
