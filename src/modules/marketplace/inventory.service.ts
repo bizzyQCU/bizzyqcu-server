@@ -6,7 +6,7 @@ export type StockLine = { productId: string; quantity: number };
 export class InventoryService {
   // Hook for checkout (Subsystem 3). Call inside the order transaction.
   // Atomic: the stock check and the decrement are one statement, so two buyers cannot oversell.
-  static async deductStock(tx: Prisma.TransactionClient, lines: StockLine[]) {
+  static async deductStock(tx: any, lines: StockLine[]) {
     for (const line of lines) {
       const { count } = await tx.product.updateMany({
         where: { id: line.productId, stockQuantity: { gte: line.quantity } },
@@ -19,7 +19,7 @@ export class InventoryService {
   }
 
   // Hook for cancellation (Subsystem 3). Call inside the cancel transaction, once per order.
-  static async restoreOrderStock(tx: Prisma.TransactionClient, orderId: string) {
+  static async restoreOrderStock(tx: any, orderId: string) {
     const items = await tx.orderItem.findMany({
       where: { orderId },
       select: { productId: true, quantity: true },

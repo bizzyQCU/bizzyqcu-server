@@ -49,7 +49,7 @@ export class OrdersService {
     }
 
     const productMap = new Map<string, (typeof products)[number]>(
-      products.map((p) => [p.id, p])
+      products.map((p: any) => [p.id, p])
     );
 
     let totalAmount = 0;
