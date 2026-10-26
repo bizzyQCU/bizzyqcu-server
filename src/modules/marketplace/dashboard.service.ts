@@ -48,10 +48,10 @@ export class DashboardService {
       ]);
 
     const topNames = await prisma.product.findMany({
-      where: { id: { in: topSelling.map((t) => t.productId) } },
+      where: { id: { in: topSelling.map((t: any) => t.productId) } },
       select: { id: true, name: true },
     });
-    const nameById = new Map(topNames.map((p) => [p.id, p.name]));
+    const nameById = new Map(topNames.map((p: any) => [p.id, p.name]));
 
     return {
       store,
@@ -60,13 +60,13 @@ export class DashboardService {
         totalRevenue: Number(sales._sum.totalAmount ?? 0),
       },
       ordersByStatus: Object.fromEntries(
-        ordersByStatus.map((o) => [o.orderStatus, o._count._all])
+        ordersByStatus.map((o: any) => [o.orderStatus, o._count._all])
       ),
       productsByApproval: Object.fromEntries(
-        productsByApproval.map((p) => [p.approvalStatus, p._count._all])
+        productsByApproval.map((p: any) => [p.approvalStatus, p._count._all])
       ),
       lowStock: { threshold: LOW_STOCK_THRESHOLD, products: lowStock },
-      topSelling: topSelling.map((t) => ({
+      topSelling: topSelling.map((t: any) => ({
         productId: t.productId,
         name: nameById.get(t.productId),
         unitsSold: t._sum.quantity ?? 0,

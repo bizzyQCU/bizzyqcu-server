@@ -1,24 +1,15 @@
 import { z } from "zod";
 
-export const reviewUserVerificationSchema = z.object({
-  params: z.object({
-    userId: z.string().uuid("Invalid user ID"),
-  }),
-  body: z.object({
-    status: z.enum(["VERIFIED", "REJECTED"]),
-    rejectionReason: z.string().optional(),
-  }),
-});
-
-export const reviewProductApprovalSchema = z.object({
-  params: z.object({
-    productId: z.string().uuid("Invalid product ID"),
-  }),
-  body: z.object({
-    status: z.enum(["VERIFIED", "REJECTED"]),
-    rejectionReason: z.string().optional(),
-  }),
-});
+/**
+ * Castro's complaint validation lives here.
+ *
+ * The review schemas moved to `verification.validation.ts` (Guades) but are
+ * re-exported so any existing import from `admin.validation` keeps working.
+ */
+export {
+  reviewUserVerificationSchema,
+  reviewProductApprovalSchema,
+} from "./verification.validation";
 
 export const resolveComplaintSchema = z.object({
   params: z.object({
