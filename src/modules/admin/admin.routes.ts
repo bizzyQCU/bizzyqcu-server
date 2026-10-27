@@ -75,6 +75,11 @@ router.patch(
   validate(reviewProductApprovalSchema),
   VerificationController.reviewProduct
 );
+router.patch(
+  "/verifications/products/:productId",
+  validate(reviewProductApprovalSchema),
+  VerificationController.reviewProduct
+);
 
 // ---------------------------------------------------------------------------
 // Phase 4 – Analytics (Guades)

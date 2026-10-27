@@ -346,7 +346,7 @@ export class AnalyticsService {
         _sum: { totalAmount: true },
       }),
       prisma.$queryRaw<HourRow[]>`
-        SELECT EXTRACT(HOUR FROM (o."createdAt" AT TIME ZONE ${MANILA_TZ}::text))::int AS "hour",
+        SELECT EXTRACT(HOUR FROM (o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${MANILA_TZ}::text))::int AS "hour",
                COUNT(*)::int AS "orderCount",
                COALESCE(SUM(o."totalAmount"), 0)::float8 AS revenue
         FROM "Order" o

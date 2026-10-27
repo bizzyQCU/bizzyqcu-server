@@ -104,6 +104,7 @@ export class DisputesService {
         createdAt: true,
       },
       orderBy: { createdAt: "asc" },
+      take: 2000,
     });
 
     const dsu = new DisjointSet();
