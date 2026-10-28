@@ -26,13 +26,43 @@ import {
   reopenDisputeSchema,
 } from "./disputes.validation";
 
-// Castro – Subsystem 4
-import { resolveComplaintSchema, createComplaintSchema } from "./admin.validation";
+// Duay & Castro – Subsystem 4
+import {
+  createComplaintSchema,
+  getComplaintsQuerySchema,
+  getComplaintByIdSchema,
+  resolveComplaintSchema,
+  getAuditLogsQuerySchema,
+  getTransactionLogsQuerySchema,
+  getTransactionByIdSchema,
+} from "./admin.validation";
 
 const router = Router();
 
-// Subsystem 4: Guades & Castro (Admin Only)
-router.use(requireAuth, requireRole("ADMIN"));
+// Subsystem 4: Requires authenticated session
+router.use(requireAuth);
+
+// ---------------------------------------------------------------------------
+// Open to all authenticated users (Buyers, Sellers, Admins)
+// ---------------------------------------------------------------------------
+
+/** POST /api/v1/admin/complaints - Submit complaint ticket */
+router.post(
+  "/complaints",
+  validate(createComplaintSchema),
+  AdminController.createComplaint
+);
+
+/** GET /api/v1/admin/complaints/my - View current user's submitted tickets */
+router.get(
+  "/complaints/my",
+  AdminController.getMyComplaints
+);
+
+// ---------------------------------------------------------------------------
+// Strictly ADMIN-ONLY routes below
+// ---------------------------------------------------------------------------
+router.use(requireRole("ADMIN"));
 
 // ---------------------------------------------------------------------------
 // Phase 2 – Verification queue (Guades)
@@ -119,17 +149,57 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
-// Castro – Complaints & Audit Logs
+// Complaints Management (Duay & Castro)
 // ---------------------------------------------------------------------------
-router.post("/complaints", validate(createComplaintSchema), AdminController.createComplaint);
-router.get("/complaints", AdminController.getComplaints);
+
+/** GET /api/v1/admin/complaints - List all complaints with pagination & filters */
+router.get(
+  "/complaints",
+  validate(getComplaintsQuerySchema),
+  AdminController.getComplaints
+);
+
+/** GET /api/v1/admin/complaints/:complaintId - View single complaint details */
+router.get(
+  "/complaints/:complaintId",
+  validate(getComplaintByIdSchema),
+  AdminController.getComplaintById
+);
+
+/** PATCH /api/v1/admin/complaints/:complaintId - Resolve or dismiss complaint */
 router.patch(
   "/complaints/:complaintId",
   validate(resolveComplaintSchema),
   AdminController.resolveComplaint
 );
 
-// View system activity / audit logs
-router.get("/audit-logs", AdminController.getAuditLogs);
+// ---------------------------------------------------------------------------
+// System Activity & Audit Logs (Duay & Castro)
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/audit-logs - View audit trail with pagination and filters */
+router.get(
+  "/audit-logs",
+  validate(getAuditLogsQuerySchema),
+  AdminController.getAuditLogs
+);
+
+// ---------------------------------------------------------------------------
+// Transaction Monitoring Logs (Duay & Castro)
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/transactions - View PayMongo split payments & cash logs */
+router.get(
+  "/transactions",
+  validate(getTransactionLogsQuerySchema),
+  AdminController.getTransactionLogs
+);
+
+/** GET /api/v1/admin/transactions/:transactionId - Inspect single transaction with webhook payload */
+router.get(
+  "/transactions/:transactionId",
+  validate(getTransactionByIdSchema),
+  AdminController.getTransactionById
+);
 
 export default router;

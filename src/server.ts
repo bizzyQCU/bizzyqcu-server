@@ -8,6 +8,7 @@ import authRoutes from "./modules/auth/auth.routes";             // Subsystem 1 
 import marketplaceRoutes from "./modules/marketplace/marketplace.routes"; // Subsystem 2 (Luarca & Ojeda)
 import orderRoutes from "./modules/orders/orders.routes";         // Subsystem 3 (Reyes & Ponce)
 import adminRoutes from "./modules/admin/admin.routes";           // Subsystem 4 (Guades & Castro)
+import complaintRoutes from "./modules/admin/complaints.routes"; // Subsystem 4 (Complaints API)
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/marketplace", marketplaceRoutes);
 app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/complaints", complaintRoutes);
 
 // Global Error Handler
 app.use(errorHandler);
