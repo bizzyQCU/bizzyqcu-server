@@ -27,7 +27,7 @@ import {
 } from "./disputes.validation";
 
 // Castro – Subsystem 4
-import { resolveComplaintSchema } from "./admin.validation";
+import { resolveComplaintSchema, createComplaintSchema } from "./admin.validation";
 
 const router = Router();
 
@@ -63,7 +63,6 @@ router.patch(
   VerificationController.reviewStore
 );
 
-// Backwards-compatible alias for the scaffold route (PATCH /verifications/:userId).
 router.patch(
   "/verifications/:userId",
   validate(reviewUserVerificationSchema),
@@ -120,13 +119,17 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
-// Castro – Complaints
+// Castro – Complaints & Audit Logs
 // ---------------------------------------------------------------------------
+router.post("/complaints", validate(createComplaintSchema), AdminController.createComplaint);
 router.get("/complaints", AdminController.getComplaints);
 router.patch(
   "/complaints/:complaintId",
   validate(resolveComplaintSchema),
   AdminController.resolveComplaint
 );
+
+// View system activity / audit logs
+router.get("/audit-logs", AdminController.getAuditLogs);
 
 export default router;

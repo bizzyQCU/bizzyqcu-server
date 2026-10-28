@@ -20,3 +20,12 @@ export const resolveComplaintSchema = z.object({
     adminResolutionNote: z.string().min(5, "Resolution note is required"),
   }),
 });
+
+// NEW: Schema for submitting a complaint
+export const createComplaintSchema = z.object({
+  body: z.object({
+    orderId: z.string().uuid("Invalid order ID").optional(),
+    subject: z.string().min(5, "Subject must be at least 5 characters"),
+    description: z.string().min(10, "Description must be at least 10 characters"),
+  }),
+});
