@@ -1,57 +1,100 @@
+
 import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
 import { AppError } from "../utils/AppError";
-import { prisma, UserRole } from "../config/db";
+import {
+    prisma,
+    UserRole,
+    VerificationStatus,
+} from "../config/db";
+import { env } from "../config/env";
 
 export interface AuthenticatedUser {
-  id: string;
-  qcuIdNumber: string;
-  email: string;
-  role: UserRole;
+    id: string;
+    qcuIdNumber: string;
+    email: string;
+    role: UserRole;
+    verificationStatus: VerificationStatus;
 }
 
+// Make req.user available throughout the backend
 declare global {
-  namespace Express {
-    interface Request {
-      user?: AuthenticatedUser;
+    namespace Express {
+        interface Request {
+            user?: AuthenticatedUser;
+        }
     }
-  }
 }
 
 /**
- * Auth Middleware (Dalupang & Vizconde)
- * Validates request authentication (e.g., Bearer token or session header).
+ * JWT Authentication Middleware
  */
 export const requireAuth = async (
-  req: Request,
-  _res: Response,
-  next: NextFunction
+    req: Request,
+    _res: Response,
+    next: NextFunction
 ) => {
-  try {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      throw new AppError("Authentication required. Please log in.", 401);
+        return next(
+            new AppError("Authentication required. Please log in.", 401)
+        );
     }
 
-    const token = authHeader.split(" ")[1];
+    const token = authHeader.slice(7).trim();
+
     if (!token) {
-      throw new AppError("Malformed authentication token.", 401);
+        return next(
+            new AppError("Malformed authentication token.", 401)
+        );
     }
 
-    // In local development / mock token support: allows user ID directly or JWT
-    // Vizconde & Manuel will plug in full JWT / WebAuthn session verification here
-    const user = await prisma.user.findFirst({
-      where: { id: token },
-      select: { id: true, qcuIdNumber: true, email: true, role: true },
-    });
+    try {
+        const decoded = jwt.verify(token, env.JWT_SECRET, {
+            algorithms: ["HS256"],
+        });
 
-    if (!user) {
-      throw new AppError("Invalid or expired session.", 401);
+        if (
+            typeof decoded === "string" ||
+            typeof decoded.sub !== "string"
+        ) {
+            throw new AppError("Invalid authentication token.", 401);
+        }
+
+        const user = await prisma.user.findUnique({
+            where: {
+                id: decoded.sub,
+            },
+            select: {
+                id: true,
+                qcuIdNumber: true,
+                email: true,
+                role: true,
+                verificationStatus: true,
+            },
+        });
+
+        if (!user) {
+            throw new AppError("User account not found.", 401);
+        }
+
+        req.user = user;
+
+        return next();
+    } catch (error) {
+        if (error instanceof jwt.TokenExpiredError) {
+            return next(
+                new AppError("Session expired. Please log in again.", 401)
+            );
+        }
+
+        if (error instanceof jwt.JsonWebTokenError) {
+            return next(
+                new AppError("Invalid authentication token.", 401)
+            );
+        }
+
+        return next(error);
     }
-
-    req.user = user;
-    next();
-  } catch (error) {
-    next(error);
-  }
 };
