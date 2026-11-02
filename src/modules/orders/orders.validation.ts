@@ -2,21 +2,16 @@ import { z } from "zod";
 
 export const createOrderSchema = z.object({
   body: z.object({
-    storeId: z.string().uuid("Invalid store ID"),
     deliveryMethod: z.enum(["ROOM_TO_ROOM", "PICKUP"]),
-    campusBuilding: z.string().optional(),
-    campusRoomNumber: z.string().optional(),
-    pickupInstructions: z.string().optional(),
-    deliveryNotes: z.string().optional(),
+    campusBuilding: z.string().trim().min(1).max(120).optional(),
+    campusRoomNumber: z.string().trim().min(1).max(40).optional(),
+    pickupInstructions: z.string().trim().max(500).optional(),
+    deliveryNotes: z.string().trim().max(500).optional(),
     paymentMethod: z.enum(["CASH", "GCASH_PAYMONGO"]),
-    items: z
-      .array(
-        z.object({
-          productId: z.string().uuid("Invalid product ID"),
-          quantity: z.number().int().positive("Quantity must be at least 1"),
-        })
-      )
-      .min(1, "Order must contain at least 1 item"),
+  }).superRefine((body, ctx) => {
+    if (body.deliveryMethod === "ROOM_TO_ROOM" && (!body.campusBuilding || !body.campusRoomNumber)) {
+      ctx.addIssue({ code: "custom", path: ["campusBuilding"], message: "Building and room are required for room-to-room delivery." });
+    }
   }),
 });
 
