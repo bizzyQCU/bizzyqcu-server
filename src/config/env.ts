@@ -17,6 +17,7 @@ const envSchema = z.object({
   // PayMongo (Optional in dev)
   PAYMONGO_SECRET_KEY: z.string().optional(),
   PAYMONGO_PUBLIC_KEY: z.string().optional(),
+  PAYMONGO_WEBHOOK_SECRET: z.string().optional(),
 
   // WebAuthn Passkeys
   RP_NAME: z.string().default("BizzyQCU"),
