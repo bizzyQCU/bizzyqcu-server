@@ -2,7 +2,6 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Request, Response } from "express";
 import { prisma } from "../../config/db";
 import { env } from "../../config/env";
-import { InventoryService } from "../marketplace/inventory.service";
 
 type PayMongoEvent = {
   data?: {
@@ -62,6 +61,12 @@ export async function handlePayMongoWebhook(req: Request, res: Response): Promis
   }
 
   const eventType = attributes.type ?? "";
+  // Hosted Checkout's trusted completion event contains the Checkout Session.
+  // A failed payment attempt is retryable and is not proof that the session is terminal.
+  if (eventType !== "checkout_session.payment.paid") {
+    res.status(200).json({ received: true, ignored: true });
+    return;
+  }
   const session = attributes.data;
   const sessionId = session?.id;
   const referenceNumber = session?.attributes?.reference_number;
@@ -70,15 +75,8 @@ export async function handlePayMongoWebhook(req: Request, res: Response): Promis
     return;
   }
 
-  const isPaid = eventType === "checkout_session.payment.paid" && session?.attributes?.payments?.some((p) => p.attributes?.status === "paid");
-  const isFailed = [
-    "checkout_session.payment.failed",
-    "checkout_session.payment.cancelled",
-    "checkout_session.expired",
-    "payment.failed",
-    "payment_intent.payment_failed",
-  ].includes(eventType);
-  if (!isPaid && !isFailed) {
+  const isPaid = session?.attributes?.payments?.some((p) => p.attributes?.status === "paid");
+  if (!isPaid) {
     res.status(200).json({ received: true, ignored: true });
     return;
   }
@@ -94,28 +92,18 @@ export async function handlePayMongoWebhook(req: Request, res: Response): Promis
     }
 
     const processed = await prisma.$transaction(async (tx) => {
-      if (isPaid) {
-        const orderChanged = await tx.order.updateMany({ where: { id: order.id, orderStatus: "PENDING_PAYMENT" }, data: { orderStatus: "PENDING_CONFIRMATION" } });
-        if (orderChanged.count !== 1) return false;
-        const paymentChanged = await tx.paymentTransaction.updateMany({
-          where: { orderId: order.id, status: "PENDING", paymongoCheckoutId: sessionId },
-          data: { status: "PAID", paidAt: new Date(), paymongoPaymentIntentId: session?.attributes?.payment_intent?.id ?? null, webhookPayload: JSON.parse(req.body.toString("utf8")) },
-        });
-        if (paymentChanged.count !== 1) throw new Error("Payment was not pending during confirmation.");
-        return true;
-      }
-
-      const cancelled = await tx.order.updateMany({ where: { id: order.id, orderStatus: "PENDING_PAYMENT" }, data: { orderStatus: "CANCELLED" } });
-      if (cancelled.count !== 1) return false;
-      await InventoryService.restoreOrderStock(tx, order.id);
-      const failed = await tx.paymentTransaction.updateMany({
+      const orderChanged = await tx.order.updateMany({ where: { id: order.id, orderStatus: "PENDING_PAYMENT" }, data: { orderStatus: "PENDING_CONFIRMATION" } });
+      if (orderChanged.count !== 1) return false;
+      const paymentChanged = await tx.paymentTransaction.updateMany({
         where: { orderId: order.id, status: "PENDING", paymongoCheckoutId: sessionId },
         data: {
-          status: eventType.includes("cancel") || eventType.endsWith("expired") ? "CANCELLED" : "FAILED",
+          status: "PAID",
+          paidAt: new Date(),
+          paymongoPaymentIntentId: session?.attributes?.payment_intent?.id ?? null,
           webhookPayload: JSON.parse(req.body.toString("utf8")),
         },
       });
-      if (failed.count !== 1) throw new Error("Payment was not pending during rollback.");
+      if (paymentChanged.count !== 1) throw new Error("Payment was not pending during confirmation.");
       return true;
     });
     res.status(200).json({ received: true, processed });

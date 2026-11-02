@@ -70,4 +70,25 @@ export class PayMongoService {
       );
     }
   }
+
+  /** Expire a session before cancelling an unpaid order so it can no longer accept payment. */
+  static async expireCheckoutSession(checkoutSessionId: string) {
+    if (!env.PAYMONGO_SECRET_KEY) {
+      throw new AppError("PayMongo secret key is not configured.", 503);
+    }
+    try {
+      await paymongoClient.post(`/v2/checkout_sessions/${encodeURIComponent(checkoutSessionId)}/expire`);
+    } catch {
+      // An already expired session is safe. Paid/processing or still-active sessions are not.
+      try {
+        const response = await paymongoClient.get<{
+          data?: { attributes?: { status?: string } };
+        }>(`/v2/checkout_sessions/${encodeURIComponent(checkoutSessionId)}`);
+        if (response.data.data?.attributes?.status === "expired") return;
+      } catch {
+        // Fall through to a single safe failure response.
+      }
+      throw new AppError("PayMongo could not safely expire this checkout session.", 409);
+    }
+  }
 }

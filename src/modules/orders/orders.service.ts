@@ -125,9 +125,14 @@ export class OrdersService {
         });
         orders.push(order);
       }
-      const removed = await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
-      if (removed.count !== cart.items.length) {
-        throw new AppError("Your cart changed during checkout. Please review it and retry.", 409);
+      if (data.paymentMethod === "CASH") {
+        // Consume only the exact rows checked out. Cart edits made concurrently remain in the cart.
+        await tx.cartItem.deleteMany({
+          where: {
+            cartId: cart.id,
+            OR: cart.items.map((item) => ({ id: item.id, productId: item.productId, quantity: item.quantity })),
+          },
+        });
       }
       return orders;
     });
@@ -135,7 +140,7 @@ export class OrdersService {
 
     if (data.paymentMethod === "GCASH_PAYMONGO") {
       try {
-        const withCheckout = await Promise.all(createdOrders.map(async (order) => {
+        const results = await Promise.allSettled(createdOrders.map(async (order) => {
           const items = order.items.map((item) => ({ name: item.productNameSnapshot, amount: Math.round(Number(item.unitPriceSnapshot) * 100), quantity: item.quantity }));
           const session = await PayMongoService.createCheckoutSession({
             orderId: order.id,
@@ -147,10 +152,24 @@ export class OrdersService {
           await prisma.paymentTransaction.update({ where: { orderId: order.id }, data: { paymongoCheckoutId: session.checkoutSessionId } });
           return { ...order, checkoutUrl: session.checkoutUrl };
         }));
+        const failedSessionCreation = results.some((result) => result.status === "rejected");
+        if (failedSessionCreation) {
+          await this.cancelUnpaidOrders(orderIds, "FAILED");
+          throw new AppError("Payment session creation failed. The cart was kept for retry.", 502);
+        }
+        const withCheckout = results.map((result) => (result as PromiseFulfilledResult<(typeof createdOrders)[number] & { checkoutUrl: string }>).value);
+        // Keep cart rows until every required payment session has been created successfully.
+        await prisma.cartItem.deleteMany({
+          where: {
+            cartId: cart.id,
+            OR: cart.items.map((item) => ({ id: item.id, productId: item.productId, quantity: item.quantity })),
+          },
+        });
         return { orders: withCheckout };
-      } catch {
+      } catch (error) {
+        if (error instanceof AppError) throw error;
         await this.cancelUnpaidOrders(orderIds, "FAILED");
-        throw new AppError("Payment session creation failed. Checkout was cancelled.", 502);
+        throw new AppError("Payment session creation failed. The cart was kept for retry.", 502);
       }
     }
 
@@ -160,6 +179,19 @@ export class OrdersService {
   /** Shared atomic rollback for a pending order; status guards make duplicate calls harmless. */
   static async cancelUnpaidOrders(orderIds: string[], paymentStatus: "FAILED" | "CANCELLED") {
     for (const orderId of orderIds) {
+      const existingPayment = await prisma.paymentTransaction.findUnique({
+        where: { orderId },
+        select: { status: true, method: true, paymongoCheckoutId: true },
+      });
+      if (!existingPayment || existingPayment.status !== "PENDING") continue;
+      if (existingPayment.method === "GCASH_PAYMONGO" && existingPayment.paymongoCheckoutId) {
+        try {
+          await PayMongoService.expireCheckoutSession(existingPayment.paymongoCheckoutId);
+        } catch {
+          // Keep stock reserved if the session may already be paid or processing.
+          continue;
+        }
+      }
       await prisma.$transaction(async (tx) => {
         const payment = await tx.paymentTransaction.findUnique({ where: { orderId }, select: { status: true } });
         if (!payment || payment.status !== "PENDING") return;
@@ -174,7 +206,7 @@ export class OrdersService {
   static async updateStatus(orderId: string, status: OrderStatus, actor: { id: string; role: UserRole }) {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { store: { select: { sellerProfile: { select: { userId: true } } } }, payment: { select: { status: true, method: true } } },
+      include: { store: { select: { sellerProfile: { select: { userId: true } } } }, payment: { select: { status: true, method: true, paymongoCheckoutId: true } } },
     });
     if (!order) throw new AppError("Order not found.", 404);
     assertRoleCanSetStatus(actor.role, status);
@@ -191,6 +223,10 @@ export class OrdersService {
     }
     if (status === "CANCELLED" && order.payment?.status === "PAID") {
       throw new AppError("Paid orders require an approved refund process before cancellation.", 409);
+    }
+    if (status === "CANCELLED" && order.payment?.method === "GCASH_PAYMONGO" && order.payment.status === "PENDING") {
+      if (!order.payment.paymongoCheckoutId) throw new AppError("Payment session is not ready to be cancelled.", 409);
+      await PayMongoService.expireCheckoutSession(order.payment.paymongoCheckoutId);
     }
 
     return prisma.$transaction(async (tx) => {
