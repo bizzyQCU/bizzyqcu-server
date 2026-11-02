@@ -1,10 +1,11 @@
-
 import nodemailer from "nodemailer";
 import { env } from "../config/env";
 import { AppError } from "./AppError";
 
 /**
  * Sends an OTP email to the registered user.
+ * In development mode, if SMTP credentials are not configured,
+ * logs the OTP code directly to console for rapid local testing.
  */
 export const sendOtpEmail = async (
     recipient: string,
@@ -25,6 +26,16 @@ export const sendOtpEmail = async (
         !SMTP_USER?.trim() ||
         !SMTP_PASS?.trim()
     ) {
+        if (env.NODE_ENV === "development" || env.NODE_ENV === "test") {
+            console.log("\n========================================================");
+            console.log("📧 [DEV EMAIL MOCK] SMTP credentials not configured.");
+            console.log(`📧 Recipient: ${recipient}`);
+            console.log(`🔑 Verification OTP: ${otp}`);
+            console.log("⏱️  Valid for 5 minutes.");
+            console.log("========================================================\n");
+            return;
+        }
+
         throw new AppError(
             "Email service is not configured.",
             503

@@ -1,7 +1,7 @@
-
 import {
     prisma,
     QcuMemberType,
+    VerificationStatus,
 } from "../../config/db";
 
 import { AppError } from "../../utils/AppError";
@@ -19,6 +19,9 @@ import {
 } from "../../utils/otp";
 
 import { sendOtpEmail } from "../../utils/email";
+
+// Dummy bcrypt hash to neutralize user enumeration timing attacks
+const DUMMY_HASH = "$2a$12$e8uq0e1gYq03e.sT2c7GPe7wBskrJ9rMh7g8tE0o8J7H7B.d4B8eq";
 
 export class AuthService {
     // ==========================================
@@ -63,7 +66,7 @@ export class AuthService {
                 qcuIdPhotoUrl: data.qcuIdPhotoUrl,
                 liveSelfieUrl: data.liveSelfieUrl,
                 passwordHash,
-                verificationStatus: "PENDING",
+                verificationStatus: VerificationStatus.PENDING,
             },
             select: {
                 id: true,
@@ -98,6 +101,8 @@ export class AuthService {
         });
 
         if (!user || !user.passwordHash) {
+            // Mitigate timing attack with dummy hash comparison
+            await comparePassword(data.password, DUMMY_HASH);
             throw new AppError(
                 "Invalid QCU ID or password.",
                 401
@@ -119,7 +124,7 @@ export class AuthService {
         // Generate a new six-digit OTP
         const otp = generateOtp();
 
-        // Store only the OTP hash
+        // Store only the OTP hash bound to the user id
         const otpHash = hashOtp(user.id, otp);
 
         const otpExpiresAt = new Date(
@@ -137,10 +142,10 @@ export class AuthService {
         });
 
         try {
-            // Send the actual OTP to the registered email
+            // Send the OTP to the registered email (or mock console log in dev)
             await sendOtpEmail(user.email, otp);
         } catch {
-            // Invalidate the code if email delivery fails
+            // Invalidate the code if delivery fails
             await prisma.user.update({
                 where: {
                     id: user.id,
@@ -176,6 +181,8 @@ export class AuthService {
             },
             select: {
                 id: true,
+                qcuIdNumber: true,
+                fullName: true,
                 email: true,
                 role: true,
                 verificationStatus: true,
@@ -243,11 +250,14 @@ export class AuthService {
         const accessToken = generateAccessToken(user.id);
 
         return {
+            token: accessToken, // Compatible with client expects
             accessToken,
             tokenType: "Bearer",
             expiresIn: 3600,
             user: {
                 id: user.id,
+                qcuIdNumber: user.qcuIdNumber,
+                fullName: user.fullName,
                 email: user.email,
                 role: user.role,
                 verificationStatus: user.verificationStatus,

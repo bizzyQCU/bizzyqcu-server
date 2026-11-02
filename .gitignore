@@ -16,4 +16,6 @@ Prompt.md
 
 # IDE & Editor cache
 .vs/
+.postman/
+postman/
 dist

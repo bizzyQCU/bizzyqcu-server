@@ -1,4 +1,3 @@
-
 import { z } from "zod";
 
 export const registerUserSchema = z.object({
@@ -35,7 +34,44 @@ export const verifyPasswordOtpSchema = z.object({
 // Existing login schema, retained for compatibility
 export const loginUserSchema = z.object({
     body: z.object({
-        qcuIdNumber: z.string(),
+        qcuIdNumber: z.string().min(1, "QCU ID is required"),
         password: z.string().optional(),
+    }),
+});
+
+// ==========================================
+// WEBAUTHN VALIDATION SCHEMAS
+// ==========================================
+
+export const webauthnRegisterOptionsSchema = z.object({
+    body: z.object({
+        userId: z.string().uuid("Invalid user ID").optional(),
+    }).optional(),
+});
+
+export const webauthnRegisterVerifySchema = z.object({
+    body: z.object({
+        userId: z.string().uuid("Invalid user ID").optional(),
+        response: z.record(z.string(), z.any()),
+        deviceName: z.string().max(100).optional(),
+    }),
+});
+
+export const webauthnLoginOptionsSchema = z.object({
+    body: z.object({
+        qcuIdNumber: z.string().min(1, "QCU ID is required"),
+    }),
+});
+
+export const webauthnLoginVerifySchema = z.object({
+    body: z.object({
+        qcuIdNumber: z.string().min(1, "QCU ID is required"),
+        response: z.record(z.string(), z.any()),
+    }),
+});
+
+export const deletePasskeySchema = z.object({
+    params: z.object({
+        id: z.string().min(1, "Passkey ID is required"),
     }),
 });

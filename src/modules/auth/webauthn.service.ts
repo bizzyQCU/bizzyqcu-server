@@ -1,4 +1,3 @@
-
 import {
     generateRegistrationOptions,
     verifyRegistrationResponse,
@@ -20,8 +19,6 @@ import { webAuthnConfig } from "../../config/webauthn";
 // A WebAuthn challenge expires after five minutes.
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
-// The database field stores the challenge and its expiration.
-// This avoids needing another database field or migration.
 interface StoredChallenge {
     challenge: string;
     expiresAt: number;
@@ -112,7 +109,7 @@ export class WebAuthnService {
 
             excludeCredentials: user.passkeys.map((passkey) => ({
                 id: passkey.id,
-                transports: passkey.transports,
+                transports: passkey.transports as any,
             })),
 
             authenticatorSelection: {
@@ -198,8 +195,7 @@ export class WebAuthnService {
             credential.transports ??
             [];
 
-        // Consume the challenge and save the credential
-        // in one transaction.
+        // Consume the challenge and save the credential in one transaction
         const savedPasskey = await prisma.$transaction(
             async (tx) => {
                 const consumed = await tx.user.updateMany({
@@ -279,7 +275,7 @@ export class WebAuthnService {
 
             allowCredentials: user.passkeys.map((passkey) => ({
                 id: passkey.id,
-                transports: passkey.transports,
+                transports: passkey.transports as any,
             })),
 
             userVerification: "required",
@@ -349,7 +345,7 @@ export class WebAuthnService {
                     id: passkey.id,
                     publicKey: Uint8Array.from(passkey.publicKey),
                     counter: Number(passkey.counter),
-                    transports: passkey.transports,
+                    transports: passkey.transports as any,
                 },
 
                 requireUserVerification: true,
@@ -373,8 +369,7 @@ export class WebAuthnService {
 
         const { newCounter } = verification.authenticationInfo;
 
-        // Consume the challenge and update the credential counter
-        // atomically to prevent challenge reuse.
+        // Atomically consume challenge and update credential counter
         await prisma.$transaction(async (tx) => {
             const consumed = await tx.user.updateMany({
                 where: {
@@ -413,20 +408,65 @@ export class WebAuthnService {
             }
         });
 
-        // Issue JWT only after successful passkey verification.
+        // Issue JWT only after successful passkey verification
         const accessToken = generateAccessToken(user.id);
 
         return {
+            token: accessToken, // Compatible with client expectations
             accessToken,
             tokenType: "Bearer",
             expiresIn: 3600,
             user: {
                 id: user.id,
                 qcuIdNumber: user.qcuIdNumber,
+                fullName: user.fullName,
                 email: user.email,
                 role: user.role,
                 verificationStatus: user.verificationStatus,
             },
+        };
+    }
+
+    // ========================================
+    // 5. PASSKEY MANAGEMENT (List & Delete)
+    // ========================================
+
+    static async listPasskeys(userId: string) {
+        return prisma.passkeyCredential.findMany({
+            where: { userId },
+            select: {
+                id: true,
+                deviceName: true,
+                deviceType: true,
+                transports: true,
+                backedUp: true,
+                createdAt: true,
+                lastUsedAt: true,
+            },
+            orderBy: {
+                createdAt: "desc",
+            },
+        });
+    }
+
+    static async deletePasskey(userId: string, passkeyId: string) {
+        const passkey = await prisma.passkeyCredential.findFirst({
+            where: {
+                id: passkeyId,
+                userId,
+            },
+        });
+
+        if (!passkey) {
+            throw new AppError("Passkey not found or unauthorized.", 404);
+        }
+
+        await prisma.passkeyCredential.delete({
+            where: { id: passkeyId },
+        });
+
+        return {
+            message: "Passkey deleted successfully.",
         };
     }
 }
