@@ -12,6 +12,7 @@ import marketplaceRoutes from "./modules/marketplace/marketplace.routes";
 import orderRoutes from "./modules/orders/orders.routes";         
 import adminRoutes from "./modules/admin/admin.routes";           
 import complaintRoutes from "./modules/admin/complaints.routes"; 
+import cartRoutes from "./modules/cart/cart.routes";
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.use("/api/v1/marketplace", marketplaceRoutes);
 app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/complaints", complaintRoutes);
+app.use("/api/v1/cart", cartRoutes);
 
 app.use(errorHandler);
 
