@@ -5,7 +5,7 @@ import { AnalyticsController } from "./analytics.controller";
 import { DisputesController } from "./disputes.controller";
 import { validate } from "../../middlewares/validate.middleware";
 import { requireAuth } from "../../middlewares/auth.middleware";
-import { requireRole } from "../../middlewares/rbac.middleware";
+import { isAdmin } from "../../middlewares/rbac.middleware";
 
 // Guades – Subsystem 4
 import {
@@ -62,7 +62,7 @@ router.get(
 // ---------------------------------------------------------------------------
 // Strictly ADMIN-ONLY routes below
 // ---------------------------------------------------------------------------
-router.use(requireRole("ADMIN"));
+router.use(isAdmin);
 
 // ---------------------------------------------------------------------------
 // Phase 2 – Verification queue (Guades)
