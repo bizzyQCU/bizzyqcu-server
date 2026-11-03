@@ -1,16 +1,32 @@
 import { Router } from "express";
 import { CartController } from "./cart.controller";
+import { requireAuth } from "../../middlewares/auth.middleware";
+import { requireRole } from "../../middlewares/rbac.middleware";
+import { validate } from "../../middlewares/validate.middleware";
+import {
+  addToCartSchema,
+  updateCartItemSchema,
+  cartItemIdParamSchema,
+} from "./cart.validation";
 
 const router = Router();
 
-// I-check mo kung anong tawag sa auth middleware ninyo (e.g., isAuthenticated, requireAuth)
-// Para sa ngayon, iiwan ko muna siyang blanko para hindi mag-error, 
-// pero dapat mo itong lagyan ng auth middleware bago i-merge.
+// Cart is protected and accessible to BUYER accounts
+router.use(requireAuth);
+router.use(requireRole("BUYER"));
 
 router.get("/", CartController.getCart);
-router.post("/items", CartController.addItem);
-router.patch("/items/:cartItemId", CartController.updateQuantity);
-router.delete("/items/:cartItemId", CartController.removeItem);
+router.post("/items", validate(addToCartSchema), CartController.addItem);
+router.patch(
+  "/items/:cartItemId",
+  validate(updateCartItemSchema),
+  CartController.updateQuantity
+);
+router.delete(
+  "/items/:cartItemId",
+  validate(cartItemIdParamSchema),
+  CartController.removeItem
+);
 router.delete("/", CartController.clearCart);
 
 export default router;

@@ -1,4 +1,4 @@
-import { OrderStatus, UserRole } from "../../config/db";
+import { OrderStatus, DeliveryMethod, UserRole } from "../../config/db";
 import { AppError } from "../../utils/AppError";
 
 export const ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
@@ -18,7 +18,7 @@ export const ROLE_ALLOWED_STATUSES: Record<UserRole, OrderStatus[]> = {
     "READY_FOR_PICKUP",
     "OUT_FOR_DELIVERY",
     "COMPLETED",
-    "CANCELLED", // <-- IDINAGDAG ITO
+    "CANCELLED",
   ],
   ADMIN: [
     "PENDING_PAYMENT",
@@ -33,13 +33,30 @@ export const ROLE_ALLOWED_STATUSES: Record<UserRole, OrderStatus[]> = {
 
 export function assertValidTransition(
   from: OrderStatus,
-  to: OrderStatus
+  to: OrderStatus,
+  deliveryMethod?: DeliveryMethod
 ): void {
   if (!ORDER_TRANSITIONS[from].includes(to)) {
     throw new AppError(
       `Invalid order transition: ${from} → ${to}.`,
       409
     );
+  }
+
+  // Enforce delivery method constraints when transitioning out of PREPARING
+  if (from === "PREPARING" && deliveryMethod) {
+    if (deliveryMethod === "PICKUP" && to === "OUT_FOR_DELIVERY") {
+      throw new AppError(
+        "Orders with PICKUP delivery method cannot be marked OUT_FOR_DELIVERY (use READY_FOR_PICKUP).",
+        400
+      );
+    }
+    if (deliveryMethod === "ROOM_TO_ROOM" && to === "READY_FOR_PICKUP") {
+      throw new AppError(
+        "Orders with ROOM_TO_ROOM delivery method cannot be marked READY_FOR_PICKUP (use OUT_FOR_DELIVERY).",
+        400
+      );
+    }
   }
 }
 
