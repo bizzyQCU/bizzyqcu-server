@@ -3,12 +3,16 @@ import cors from "cors";
 import { env } from "./config/env";
 import { errorHandler } from "./middlewares/error.middleware";
 
-// Subsystem Routers
-import authRoutes from "./modules/auth/auth.routes";             // Subsystem 1 (Vizconde & Manuel)
-import marketplaceRoutes from "./modules/marketplace/marketplace.routes"; // Subsystem 2 (Luarca & Ojeda)
-import orderRoutes from "./modules/orders/orders.routes";         // Subsystem 3 (Reyes & Ponce)
-import adminRoutes from "./modules/admin/admin.routes";           // Subsystem 4 (Guades & Castro)
-import complaintRoutes from "./modules/admin/complaints.routes"; // Subsystem 4 (Complaints API)
+
+import paymongoWebhookRoutes from "./modules/orders/paymongo.routes";
+
+
+import authRoutes from "./modules/auth/auth.routes";             
+import marketplaceRoutes from "./modules/marketplace/marketplace.routes"; 
+import orderRoutes from "./modules/orders/orders.routes";         
+import adminRoutes from "./modules/admin/admin.routes";           
+import complaintRoutes from "./modules/admin/complaints.routes"; 
+import cartRoutes from "./modules/cart/cart.routes";
 
 const app = express();
 
@@ -18,9 +22,15 @@ app.use(
     credentials: true,
   })
 );
+
+
+app.use(
+  "/api/v1/orders/paymongo",
+  paymongoWebhookRoutes
+);
+
 app.use(express.json());
 
-// Health Check
 app.get("/health", (_req, res) => {
   res.status(200).json({
     status: "ok",
@@ -29,14 +39,13 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// Mount Subsystem APIs
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/marketplace", marketplaceRoutes);
 app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/complaints", complaintRoutes);
+app.use("/api/v1/cart", cartRoutes);
 
-// Global Error Handler
 app.use(errorHandler);
 
 const PORT = env.PORT;
