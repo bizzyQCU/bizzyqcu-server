@@ -13,3 +13,57 @@ export const createProductSchema = z.object({
       .min(1, "At least 1 product image is required"),
   }),
 });
+
+
+export const createStoreSchema = z.object({
+  body: z.object({
+    name: z.string().trim().min(3, "Store name must be at least 3 characters"),
+    description: z.string().trim().min(10, "Description must be at least 10 characters"),
+    logoUrl: z.string().url("Invalid logo URL").optional(),
+    bannerUrl: z.string().url("Invalid banner URL").optional(),
+    pickupLocation: z.string().trim().optional(),
+  }),
+});
+
+export const updateStoreSchema = z.object({
+  body: z.object({
+    name: z.string().trim().min(3).optional(),
+    description: z.string().trim().min(10).optional(),
+    logoUrl: z.string().url().nullable().optional(),
+    bannerUrl: z.string().url().nullable().optional(),
+    pickupLocation: z.string().trim().nullable().optional(),
+  }).refine(
+    (data) => Object.keys(data).length > 0,
+    { message: "At least one field must be provided." }
+  ),
+});
+
+
+// ==========================================
+// PRODUCT LISTING CRUD VALIDATION
+// ==========================================
+
+// Validate product ID from URL parameters
+export const productIdSchema = z.object({
+  params: z.object({
+    id: z.string().uuid("Invalid product ID"),
+  }),
+});
+
+// Validate product updates
+export const updateProductSchema = z.object({
+  params: z.object({
+    id: z.string().uuid("Invalid product ID"),
+  }),
+  body: z.object({
+    categoryId: z.string().uuid("Invalid category ID").optional(),
+    name: z.string().trim().min(3, "Product name must be at least 3 characters").optional(),
+    description: z.string().trim().min(10, "Description is too short").optional(),
+    price: z.number().positive("Price must be greater than 0").optional(),
+    stockQuantity: z.number().int().nonnegative("Stock cannot be negative").optional(),
+    imageUrls: z.array(z.string().url()).min(1, "At least 1 product image is required").optional(),
+  }).refine(
+    (data) => Object.keys(data).length > 0,
+    { message: "At least one field must be provided." }
+  ),
+});
