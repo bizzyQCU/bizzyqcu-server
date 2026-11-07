@@ -95,6 +95,10 @@ model User {
   otpCode             String?
   otpExpiresAt        DateTime?
   currentChallenge    String?            // Temporary challenge for WebAuthn registration/login
+  contactNumber       String?
+  lastEmailChange     DateTime?
+  lastContactChange   DateTime?
+  lastPasswordChange  DateTime?
 
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -159,6 +163,12 @@ model Store {
   logoUrl             String?
   bannerUrl           String?
   pickupLocation      String?            // Default campus pickup spot (e.g., "QCU Student Center Lobby")
+  contactNumber       String?
+  lastNameChange      DateTime?
+  lastBioChange       DateTime?
+  lastLocationChange  DateTime?
+  lastContactChange   DateTime?
+  lastProfileChange   DateTime?
   isOpen              Boolean            @default(true)
   approvalStatus      VerificationStatus @default(PENDING)
 

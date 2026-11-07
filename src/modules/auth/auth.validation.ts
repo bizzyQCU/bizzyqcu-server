@@ -75,3 +75,16 @@ export const deletePasskeySchema = z.object({
         id: z.string().min(1, "Passkey ID is required"),
     }),
 });
+
+export const changePasswordSchema = z.object({
+    body: z.object({
+        currentPassword: z.string().min(1, "Current password is required"),
+        newPassword: z.string().min(8, "New password must be at least 8 characters"),
+    }),
+});
+
+export const updateEmailSchema = z.object({
+    body: z.object({
+        email: z.string().email("Invalid email address"),
+    }),
+});

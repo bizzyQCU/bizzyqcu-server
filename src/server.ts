@@ -14,6 +14,7 @@ import adminRoutes from "./modules/admin/admin.routes";
 import complaintRoutes from "./modules/admin/complaints.routes"; 
 import cartRoutes from "./modules/cart/cart.routes";
 import uploadRoutes from "./modules/upload/upload.routes";
+import organizationRoutes from "./modules/organization/organization.routes";
 
 const app = express();
 
@@ -47,6 +48,7 @@ app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/complaints", complaintRoutes);
 app.use("/api/v1/cart", cartRoutes);
 app.use("/api/v1/upload", uploadRoutes);
+app.use("/api/v1/organization", organizationRoutes);
 
 app.use(errorHandler);
 

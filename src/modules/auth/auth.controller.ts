@@ -172,4 +172,37 @@ export class AuthController {
             message: result.message,
         });
     });
+
+    // ==========================================
+    // CHANGE PASSWORD
+    // ==========================================
+
+    static changePassword = asyncHandler(async (req: Request, res: Response) => {
+        const result = await AuthService.changePassword(
+            req.user!.id,
+            req.body
+        );
+
+        res.status(200).json({
+            success: true,
+            message: result.message,
+        });
+    });
+
+    // ==========================================
+    // UPDATE EMAIL
+    // ==========================================
+
+    static updateEmail = asyncHandler(async (req: Request, res: Response) => {
+        const result = await AuthService.updateEmail(
+            req.user!.id,
+            req.body.email
+        );
+
+        res.status(200).json({
+            success: true,
+            message: "Email updated successfully.",
+            data: result,
+        });
+    });
 }

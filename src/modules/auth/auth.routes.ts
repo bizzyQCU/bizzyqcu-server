@@ -14,6 +14,8 @@ import {
     webauthnLoginOptionsSchema,
     webauthnLoginVerifySchema,
     deletePasskeySchema,
+    changePasswordSchema,
+    updateEmailSchema,
 } from "./auth.validation";
 
 import {
@@ -106,6 +108,22 @@ router.delete(
     requireAuth,
     validate(deletePasskeySchema),
     AuthController.deletePasskey
+);
+
+// Update/change password
+router.patch(
+    "/password",
+    requireAuth,
+    validate(changePasswordSchema),
+    AuthController.changePassword
+);
+
+// Update user email
+router.patch(
+    "/email",
+    requireAuth,
+    validate(updateEmailSchema),
+    AuthController.updateEmail
 );
 
 export default router;

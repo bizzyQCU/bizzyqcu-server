@@ -301,4 +301,71 @@ export class AuthService {
 
         return user;
     }
+
+    // ==========================================
+    // CHANGE PASSWORD
+    // ==========================================
+
+    static async changePassword(
+        userId: string,
+        data: { currentPassword: string; newPassword: string }
+    ) {
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, passwordHash: true },
+        });
+
+        if (!user) {
+            throw new AppError("User not found.", 404);
+        }
+
+        if (user.passwordHash) {
+            const isValid = await comparePassword(
+                data.currentPassword,
+                user.passwordHash
+            );
+            if (!isValid) {
+                throw new AppError("Current password is incorrect.", 400);
+            }
+        }
+
+        const passwordHash = await hashPassword(data.newPassword);
+
+        await prisma.user.update({
+            where: { id: userId },
+            data: { passwordHash },
+        });
+
+        return { message: "Password updated successfully." };
+    }
+
+    // ==========================================
+    // UPDATE EMAIL
+    // ==========================================
+
+    static async updateEmail(userId: string, email: string) {
+        const existing = await prisma.user.findFirst({
+            where: {
+                email,
+                NOT: { id: userId },
+            },
+            select: { id: true },
+        });
+
+        if (existing) {
+            throw new AppError("Email is already taken.", 409);
+        }
+
+        const updated = await prisma.user.update({
+            where: { id: userId },
+            data: { email },
+            select: {
+                id: true,
+                email: true,
+                fullName: true,
+            },
+        });
+
+        return updated;
+    }
 }
