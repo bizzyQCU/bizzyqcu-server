@@ -3,8 +3,22 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { AuthService } from "./auth.service";
 import { WebAuthnService } from "./webauthn.service";
 import { AppError } from "../../utils/AppError";
+import { VerificationUploadService } from "./verification-upload.service";
 
 export class AuthController {
+    static uploadVerificationDocument = asyncHandler(async (req: Request, res: Response) => {
+        if (!req.file) {
+            throw new AppError("Choose a file to upload.", 400);
+        }
+
+        const data = await VerificationUploadService.upload(
+            req.file,
+            req.body.documentType
+        );
+
+        res.status(201).json({ success: true, data });
+    });
+
     // ==========================================
     // 1. REGISTRATION (Manuel & Vizconde)
     // ==========================================

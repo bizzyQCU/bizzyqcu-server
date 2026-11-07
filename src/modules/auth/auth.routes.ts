@@ -5,6 +5,7 @@ import { AuthController } from "./auth.controller";
 import { validate } from "../../middlewares/validate.middleware";
 import { requireAuth } from "../../middlewares/auth.middleware";
 import { isAdmin } from "../../middlewares/rbac.middleware";
+import { verificationUpload } from "../../middlewares/upload.middleware";
 
 import {
     registerUserSchema,
@@ -23,11 +24,13 @@ import {
     webauthnLoginOptionsSchema,
     webauthnLoginVerifySchema,
     deletePasskeySchema,
+    verificationUploadSchema,
 } from "./auth.validation";
 
 import {
     requestOtpLimiter,
     verifyOtpLimiter,
+    verificationUploadLimiter,
 } from "../../middlewares/otp-rate-limit.middleware";
 
 const router = Router();
@@ -35,6 +38,16 @@ const router = Router();
 // ==========================================
 // 1. REGISTRATION & SELLER APPLICATIONS (Manuel)
 // ==========================================
+
+// Public because ID/selfie files must be uploaded before an account exists.
+// Rate-limited, size-limited, type-limited, and stored in Cloudinary.
+router.post(
+    "/uploads/verification",
+    verificationUploadLimiter,
+    verificationUpload.single("file"),
+    validate(verificationUploadSchema),
+    AuthController.uploadVerificationDocument
+);
 
 // User registration (Captures QCU ID details, live selfie, and optional seller endorsement documents)
 router.post(

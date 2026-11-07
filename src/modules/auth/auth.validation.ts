@@ -80,6 +80,12 @@ export const checkAccountStatusSchema = z.object({
     }),
 });
 
+export const verificationUploadSchema = z.object({
+    body: z.object({
+        documentType: z.enum(["QCU_ID", "LIVE_SELFIE", "SELLER_ENDORSEMENT"]),
+    }),
+});
+
 // ==========================================
 // REGISTERED DEVICE MANAGEMENT SCHEMAS
 // ==========================================

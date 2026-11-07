@@ -16,3 +16,19 @@ export const upload = multer({
     }
   },
 });
+
+/** Verification uploads allow PDFs for endorsements, but keep ID/selfie rules narrower in the route service. */
+export const verificationUpload = multer({
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 1,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (["image/jpeg", "image/png", "application/pdf"].includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new AppError("Upload a JPG, PNG, or PDF file.", 400) as any, false);
+    }
+  },
+});
