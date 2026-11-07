@@ -99,8 +99,8 @@ export class DashboardService {
       ? new Date(query.from).getTime()
       : toMs - 30 * 24 * 60 * 60 * 1000;
 
-    if (Number.isNaN(fromMs) || Number.isNaN(toMs)) {
-      throw new AppError("Invalid date range in query parameters.", 400);
+    if (Number.isNaN(fromMs) || Number.isNaN(toMs) || fromMs > toMs) {
+      throw new AppError("Invalid date range in query parameters: 'from' must be earlier than 'to'.", 400);
     }
 
     const range = { from: new Date(fromMs), to: new Date(toMs) };
@@ -114,6 +114,7 @@ export class DashboardService {
 
     const [
       salesSummary,
+      unitsSoldSummary,
       pendingCount,
       criticalStock,
       buckets,
@@ -124,6 +125,12 @@ export class DashboardService {
         _sum: { totalAmount: true },
         _count: { _all: true },
         _avg: { totalAmount: true },
+      }),
+      prisma.orderItem.aggregate({
+        where: {
+          order: completedCondition,
+        },
+        _sum: { quantity: true },
       }),
       prisma.order.count({
         where: {
@@ -189,6 +196,7 @@ export class DashboardService {
       kpis: {
         totalRevenue: Math.round(totalRevenue * 100) / 100,
         completedOrders: orderCount,
+        totalUnitsSold: unitsSoldSummary._sum.quantity ?? 0,
         averageOrderValue: Math.round(Number(salesSummary._avg.totalAmount ?? 0) * 100) / 100,
         pendingOrders: pendingCount,
         criticalStockCount: criticalStock.length,

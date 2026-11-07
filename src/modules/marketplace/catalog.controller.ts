@@ -3,7 +3,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { CatalogService } from "./catalog.service";
 import { InventoryService } from "./inventory.service";
 import { DashboardService } from "./dashboard.service";
-import { parseSearchProductsQuery } from "./catalog.validation";
+import { parseSearchProductsQuery, parseSellerAnalyticsQuery } from "./catalog.validation";
 
 export class CatalogController {
   static searchProducts = asyncHandler(async (req: Request, res: Response) => {
@@ -36,11 +36,8 @@ export class CatalogController {
   });
 
   static getSellerAnalytics = asyncHandler(async (req: Request, res: Response) => {
-    const data = await DashboardService.getSellerAnalytics(req.user!.id, {
-      from: req.query.from as string | undefined,
-      to: req.query.to as string | undefined,
-      groupBy: (req.query.groupBy as "day" | "week" | "month") || "day",
-    });
+    const query = parseSellerAnalyticsQuery(req.query);
+    const data = await DashboardService.getSellerAnalytics(req.user!.id, query);
     res.status(200).json({ success: true, data });
   });
 }

@@ -1,8 +1,12 @@
 import { Router } from "express";
 import { UploadController } from "./upload.controller";
 import { upload } from "../../middlewares/upload.middleware";
+import { requireAuth } from "../../middlewares/auth.middleware";
 
 const router = Router();
+
+// Protect all upload endpoints from anonymous abuse
+router.use(requireAuth);
 
 // Single file upload endpoint (e.g. registration ID, selfie, store logo)
 router.post(

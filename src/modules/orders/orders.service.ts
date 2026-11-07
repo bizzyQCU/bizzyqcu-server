@@ -517,6 +517,7 @@ export class OrdersService {
               items,
               successUrl: `${env.FRONTEND_URL}/checkout/success?order=${order.orderNumber}`,
               cancelUrl: `${env.FRONTEND_URL}/checkout/cancel?order=${order.orderNumber}`,
+              sellerSubAccountId: order.payment?.sellerSubAccountId || null,
             });
 
             await prisma.paymentTransaction.update({
@@ -645,20 +646,18 @@ export class OrdersService {
 
     if (!order) throw new AppError("Order not found.", 404);
 
-    assertRoleCanSetStatus(actor.role, status);
-    assertValidTransition(order.orderStatus, status, order.deliveryMethod);
-
     const isOrderBuyer = order.buyerId === actor.id;
     const isStoreSeller = order.store.sellerProfile?.userId === actor.id;
 
-    if (!isOrderBuyer && !isStoreSeller && actor.role !== "ADMIN") {
-      throw new AppError(
-        "You do not have permission to modify this order.",
-        403
-      );
-    }
-
-    if (isOrderBuyer && !isStoreSeller && actor.role !== "ADMIN") {
+    // Determine the contextual role of the actor for this specific order
+    if (actor.role === "ADMIN") {
+      assertRoleCanSetStatus("ADMIN", status);
+    } else if (isStoreSeller) {
+      // Only the store owner can perform seller fulfillment actions
+      assertRoleCanSetStatus("SELLER", status);
+    } else if (isOrderBuyer) {
+      // Even if user has a SELLER account, they are strictly a customer on this order
+      assertRoleCanSetStatus("BUYER", status);
       if (
         status !== "CANCELLED" ||
         !["PENDING_PAYMENT", "PENDING_CONFIRMATION"].includes(order.orderStatus)
@@ -668,18 +667,14 @@ export class OrdersService {
           403
         );
       }
-    }
-
-    if (
-      actor.role === "SELLER" &&
-      !isStoreSeller &&
-      !isOrderBuyer
-    ) {
+    } else {
       throw new AppError(
-        "You are not allowed to modify orders from this store.",
+        "You do not have permission to modify this order.",
         403
       );
     }
+
+    assertValidTransition(order.orderStatus, status, order.deliveryMethod);
 
     if (
       order.payment?.method === "GCASH_PAYMONGO" &&

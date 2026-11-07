@@ -63,6 +63,6 @@ export const reviewSellerPaymongoSchema = z.object({
   params: z.object({ sellerProfileId: z.string().uuid("Invalid seller profile ID") }),
   body: z.object({
     isPaymongoVerified: z.boolean(),
-    paymongoSubAccountId: z.string().trim().optional(),
+    paymongoSubAccountId: z.string().trim().min(1, "Sub-account ID cannot be empty").optional(),
   }),
 });

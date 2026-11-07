@@ -27,6 +27,7 @@ export class PayMongoService {
     items: CheckoutLineItem[];
     successUrl: string;
     cancelUrl: string;
+    sellerSubAccountId?: string | null;
   }) {
     if (!env.PAYMONGO_SECRET_KEY) {
       throw new AppError(
@@ -36,6 +37,11 @@ export class PayMongoService {
     }
 
     try {
+      const headers: Record<string, string> = {};
+      if (data.sellerSubAccountId) {
+        headers["Account-ID"] = data.sellerSubAccountId;
+      }
+
       const response =
         await paymongoClient.post<CheckoutSessionResponse>(
           "/v2/checkout_sessions",
@@ -55,10 +61,12 @@ export class PayMongoService {
                 metadata: {
                   order_id: data.orderId,
                   order_number: data.orderNumber,
+                  seller_sub_account_id: data.sellerSubAccountId || "",
                 },
               },
             },
-          }
+          },
+          { headers }
         );
 
       return {
@@ -121,18 +129,45 @@ export class PayMongoService {
       );
     }
 
-    // Generate or use a PayMongo sub-account identifier
-    const subAccountId =
-      seller.paymongoSubAccountId ||
-      `acct_sub_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    // Check if seller already has a verified PayMongo sub-account
+    let subAccountId = seller.paymongoSubAccountId;
+    let isPaymongoVerified = seller.isPaymongoVerified;
 
-    // In non-production or test environment, auto-verify sub-account for seamless development
-    const isPaymongoVerified = true;
+    // Attempt to register with PayMongo Accounts API if configured and not yet provisioned
+    if (!subAccountId && env.PAYMONGO_SECRET_KEY) {
+      try {
+        const response = await paymongoClient.post<{
+          data: { id: string; attributes?: { status?: string } };
+        }>("/v2/accounts", {
+          data: {
+            attributes: {
+              name: data.accountName,
+              type: "merchant",
+              contact_info: {
+                phone: data.gcashNumber,
+              },
+              metadata: {
+                seller_profile_id: seller.id,
+                store_id: seller.store?.id || "",
+              },
+            },
+          },
+        });
+
+        if (response.data?.data?.id) {
+          subAccountId = response.data.data.id;
+          isPaymongoVerified = response.data.data.attributes?.status === "active";
+        }
+      } catch {
+        // If PayMongo Platforms Accounts API is unavailable on this key tier,
+        // the subaccount remains unverified pending admin verification.
+      }
+    }
 
     const updated = await prisma.sellerProfile.update({
       where: { id: seller.id },
       data: {
-        paymongoSubAccountId: subAccountId,
+        ...(subAccountId ? { paymongoSubAccountId: subAccountId } : {}),
         isPaymongoVerified,
       },
       select: {
@@ -151,9 +186,12 @@ export class PayMongoService {
       accountDetails: {
         accountName: data.accountName,
         gcashNumber: data.gcashNumber,
-        subAccountId,
+        subAccountId: updated.paymongoSubAccountId,
         isVerified: updated.isPaymongoVerified,
       },
+      message: updated.isPaymongoVerified
+        ? "PayMongo account verified and ready for online payments."
+        : "PayMongo onboarding details submitted. Pending verification by administrator before online payments can be received.",
     };
   }
 

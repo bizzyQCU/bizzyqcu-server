@@ -30,3 +30,12 @@ export const setAvailabilitySchema = z.object({
   params: z.object({ id: z.string().uuid("Invalid product ID") }),
   body: z.object({ isAvailable: z.boolean() }),
 });
+
+const sellerAnalyticsQuery = z.object({
+  from: z.string().trim().min(1).optional(),
+  to: z.string().trim().min(1).optional(),
+  groupBy: z.enum(["day", "week", "month"]).default("day"),
+});
+
+export const sellerAnalyticsSchema = z.object({ query: sellerAnalyticsQuery });
+export const parseSellerAnalyticsQuery = (query: unknown) => sellerAnalyticsQuery.parse(query);

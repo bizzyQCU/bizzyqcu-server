@@ -373,6 +373,16 @@ export class VerificationService {
     });
     if (!seller) throw new AppError("Seller profile not found.", 404);
 
+    const effectiveSubAccountId =
+      input.paymongoSubAccountId?.trim() || seller.paymongoSubAccountId?.trim();
+
+    if (input.isPaymongoVerified && !effectiveSubAccountId) {
+      throw new AppError(
+        "A valid PayMongo sub-account ID is required before marking the seller as verified for online payouts.",
+        400
+      );
+    }
+
     return prisma.$transaction(async (tx: any) => {
       const updated = await tx.sellerProfile.update({
         where: { id: sellerProfileId },
