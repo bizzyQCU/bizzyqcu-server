@@ -34,4 +34,13 @@ export class CatalogController {
     const data = await DashboardService.getSellerDashboard(req.user!.id);
     res.status(200).json({ success: true, data });
   });
+
+  static getSellerAnalytics = asyncHandler(async (req: Request, res: Response) => {
+    const data = await DashboardService.getSellerAnalytics(req.user!.id, {
+      from: req.query.from as string | undefined,
+      to: req.query.to as string | undefined,
+      groupBy: (req.query.groupBy as "day" | "week" | "month") || "day",
+    });
+    res.status(200).json({ success: true, data });
+  });
 }

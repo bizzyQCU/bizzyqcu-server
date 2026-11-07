@@ -23,6 +23,8 @@ type CheckoutData = {
   campusRoomNumber?: string;
   pickupInstructions?: string;
   deliveryNotes?: string;
+  items?: Array<{ productId: string; quantity: number }>;
+  storeId?: string;
 };
 
 const orderDetails = {
@@ -60,7 +62,7 @@ export class OrdersService {
     }
 
     if (actor.role === "ADMIN") return order;
-    if (actor.role === "BUYER" && order.buyerId === actor.id) return order;
+    if (order.buyerId === actor.id) return order;
     if (
       actor.role === "SELLER" &&
       order.store.sellerProfile?.userId === actor.id
@@ -301,19 +303,62 @@ export class OrdersService {
   }
 
   private static async createOrderFromCart(data: CheckoutData) {
-    const cart = await prisma.cart.findUnique({
-      where: { userId: data.buyerId },
-      include: {
-        items: {
-          include: {
-            product: {
-              include: {
-                store: {
-                  include: {
-                    sellerProfile: {
-                      select: {
-                        isPaymongoVerified: true,
-                        paymongoSubAccountId: true,
+    const isDirectCheckout = Boolean(data.items && data.items.length > 0);
+    let checkoutItems: Array<{
+      id?: string;
+      productId: string;
+      quantity: number;
+      product: any;
+    }> = [];
+    let cartId: string | null = null;
+
+    if (isDirectCheckout && data.items) {
+      const productIds = data.items.map((i) => i.productId);
+      const products = await prisma.product.findMany({
+        where: { id: { in: productIds } },
+        include: {
+          store: {
+            include: {
+              sellerProfile: {
+                select: {
+                  userId: true,
+                  isPaymongoVerified: true,
+                  paymongoSubAccountId: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const productMap = new Map(products.map((p) => [p.id, p]));
+      for (const item of data.items) {
+        const prod = productMap.get(item.productId);
+        if (!prod) {
+          throw new AppError(`Product with ID "${item.productId}" not found.`, 404);
+        }
+        checkoutItems.push({
+          productId: item.productId,
+          quantity: item.quantity,
+          product: prod,
+        });
+      }
+    } else {
+      const cart = await prisma.cart.findUnique({
+        where: { userId: data.buyerId },
+        include: {
+          items: {
+            include: {
+              product: {
+                include: {
+                  store: {
+                    include: {
+                      sellerProfile: {
+                        select: {
+                          userId: true,
+                          isPaymongoVerified: true,
+                          paymongoSubAccountId: true,
+                        },
                       },
                     },
                   },
@@ -322,15 +367,17 @@ export class OrdersService {
             },
           },
         },
-      },
-    });
+      });
 
-    if (!cart?.items.length) throw new AppError("Your cart is empty.", 400);
+      if (!cart?.items.length) throw new AppError("Your cart is empty.", 400);
+      cartId = cart.id;
+      checkoutItems = cart.items;
+    }
 
-    const byStore = new Map<string, typeof cart.items>();
-    for (const item of cart.items) {
+    const byStore = new Map<string, typeof checkoutItems>();
+    for (const item of checkoutItems) {
       if (!Number.isInteger(item.quantity) || item.quantity < 1) {
-        throw new AppError("Cart contains an invalid quantity.", 400);
+        throw new AppError("Order contains an invalid quantity.", 400);
       }
       const bucket = byStore.get(item.product.storeId) ?? [];
       bucket.push(item);
@@ -344,6 +391,13 @@ export class OrdersService {
         throw new AppError(
           `Store "${store.name}" is currently unavailable for checkout.`,
           409
+        );
+      }
+
+      if (store.sellerProfile?.userId === data.buyerId) {
+        throw new AppError(
+          `You cannot purchase items from your own store ("${store.name}").`,
+          400
         );
       }
 
@@ -379,6 +433,7 @@ export class OrdersService {
     const createdOrders = await prisma.$transaction(async (tx) => {
       const orders = [];
       for (const [storeId, items] of byStore) {
+        const store = items[0].product.store;
         const lines = items.map(({ product, quantity }) => ({
           productId: product.id,
           quantity,
@@ -421,6 +476,8 @@ export class OrdersService {
                 amount: totalAmount,
                 method: data.paymentMethod,
                 status: "PENDING",
+                sellerSubAccountId:
+                  store.sellerProfile?.paymongoSubAccountId || null,
               },
             },
           },
@@ -429,15 +486,13 @@ export class OrdersService {
         orders.push(order);
       }
 
-      if (data.paymentMethod === "CASH") {
+      if (data.paymentMethod === "CASH" && !isDirectCheckout && cartId) {
         // Clear checked-out items from cart
         await tx.cartItem.deleteMany({
           where: {
-            cartId: cart.id,
-            OR: cart.items.map((item) => ({
-              id: item.id,
-              productId: item.productId,
-              quantity: item.quantity,
+            cartId,
+            OR: checkoutItems.map((item) => ({
+              ...(item.id ? { id: item.id } : { productId: item.productId }),
             })),
           },
         });
@@ -495,16 +550,16 @@ export class OrdersService {
         );
 
         // Clear cart items only after PayMongo sessions are initialized
-        await prisma.cartItem.deleteMany({
-          where: {
-            cartId: cart.id,
-            OR: cart.items.map((item) => ({
-              id: item.id,
-              productId: item.productId,
-              quantity: item.quantity,
-            })),
-          },
-        });
+        if (!isDirectCheckout && cartId) {
+          await prisma.cartItem.deleteMany({
+            where: {
+              cartId,
+              OR: checkoutItems.map((item) => ({
+                ...(item.id ? { id: item.id } : { productId: item.productId }),
+              })),
+            },
+          });
+        }
 
         return { orders: withCheckout };
       } catch (error) {
@@ -593,21 +648,32 @@ export class OrdersService {
     assertRoleCanSetStatus(actor.role, status);
     assertValidTransition(order.orderStatus, status, order.deliveryMethod);
 
-    if (
-      actor.role === "BUYER" &&
-      (order.buyerId !== actor.id ||
-        status !== "CANCELLED" ||
-        !["PENDING_PAYMENT", "PENDING_CONFIRMATION"].includes(order.orderStatus))
-    ) {
+    const isOrderBuyer = order.buyerId === actor.id;
+    const isStoreSeller = order.store.sellerProfile?.userId === actor.id;
+
+    if (!isOrderBuyer && !isStoreSeller && actor.role !== "ADMIN") {
       throw new AppError(
-        "Buyers may only cancel their own orders awaiting payment or confirmation.",
+        "You do not have permission to modify this order.",
         403
       );
     }
 
+    if (isOrderBuyer && !isStoreSeller && actor.role !== "ADMIN") {
+      if (
+        status !== "CANCELLED" ||
+        !["PENDING_PAYMENT", "PENDING_CONFIRMATION"].includes(order.orderStatus)
+      ) {
+        throw new AppError(
+          "Buyers may only cancel their own orders awaiting payment or confirmation.",
+          403
+        );
+      }
+    }
+
     if (
       actor.role === "SELLER" &&
-      order.store.sellerProfile?.userId !== actor.id
+      !isStoreSeller &&
+      !isOrderBuyer
     ) {
       throw new AppError(
         "You are not allowed to modify orders from this store.",

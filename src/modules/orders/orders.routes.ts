@@ -6,9 +6,10 @@ import {
   updateOrderStatusSchema,
   orderIdParamSchema,
   createOrderMessageSchema,
+  paymongoOnboardSchema,
 } from "./orders.validation";
 import { requireAuth } from "../../middlewares/auth.middleware";
-import { isBuyer, isSeller, isVerified } from "../../middlewares/rbac.middleware";
+import { canPurchase, isSeller, isVerified } from "../../middlewares/rbac.middleware";
 
 const router = Router();
 
@@ -16,16 +17,16 @@ const router = Router();
 router.use(requireAuth);
 
 // 1. Order History
-router.get("/my-orders", isBuyer, OrdersController.getMyOrders);
+router.get("/my-orders", canPurchase, OrdersController.getMyOrders);
 router.get("/seller", isSeller, OrdersController.getSellerOrders);
 
 // 2. Pickup & Campus Delivery Options
 router.get("/pickup-locations", OrdersController.getPickupLocations);
 
-// 3. Checkout (Requires verified Buyer account)
+// 3. Checkout (Requires verified account)
 router.post(
   "/",
-  isBuyer,
+  canPurchase,
   isVerified,
   validate(createOrderSchema),
   OrdersController.createOrder
@@ -56,6 +57,21 @@ router.post(
   "/:id/messages",
   validate(createOrderMessageSchema),
   OrdersController.createOrderMessage
+);
+
+// 7. Seller PayMongo Sub-Account Onboarding & Status
+router.get(
+  "/seller/paymongo-status",
+  isSeller,
+  OrdersController.getPaymongoStatus
+);
+
+router.post(
+  "/seller/paymongo-onboard",
+  isSeller,
+  isVerified,
+  validate(paymongoOnboardSchema),
+  OrdersController.onboardPaymongo
 );
 
 export default router;

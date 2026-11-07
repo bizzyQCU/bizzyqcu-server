@@ -14,6 +14,7 @@ import {
   reviewSellerVerificationSchema,
   reviewStoreVerificationSchema,
   reviewProductApprovalSchema,
+  reviewSellerPaymongoSchema,
 } from "./verification.validation";
 import {
   salesAnalyticsSchema,
@@ -86,6 +87,11 @@ router.patch(
   "/verifications/sellers/:sellerProfileId",
   validate(reviewSellerVerificationSchema),
   VerificationController.reviewSeller
+);
+router.patch(
+  "/verifications/sellers/:sellerProfileId/paymongo",
+  validate(reviewSellerPaymongoSchema),
+  VerificationController.reviewSellerPaymongo
 );
 router.patch(
   "/verifications/stores/:storeId",

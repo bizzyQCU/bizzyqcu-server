@@ -50,6 +50,12 @@ export const requireRole = (...allowedRoles: UserRole[]) => {
 
 export const isBuyer = requireRole(UserRole.BUYER);
 
+/**
+ * Allows purchasing access to BUYER and SELLER accounts.
+ * Sellers on campus can also purchase goods from other campus stores.
+ */
+export const canPurchase = requireRole(UserRole.BUYER, UserRole.SELLER);
+
 // ==========================================
 // SELLER ACCESS
 // ==========================================

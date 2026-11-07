@@ -25,5 +25,6 @@ router.patch(
   CatalogController.setAvailability
 );
 router.get("/seller/dashboard", ...seller, CatalogController.getSellerDashboard);
+router.get("/seller/analytics", ...seller, CatalogController.getSellerAnalytics);
 
 export default router;

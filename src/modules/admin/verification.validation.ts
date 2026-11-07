@@ -58,3 +58,11 @@ export const reviewProductApprovalSchema = z.object({
   params: z.object({ productId: z.string().uuid("Invalid product ID") }),
   body: reviewBody,
 });
+
+export const reviewSellerPaymongoSchema = z.object({
+  params: z.object({ sellerProfileId: z.string().uuid("Invalid seller profile ID") }),
+  body: z.object({
+    isPaymongoVerified: z.boolean(),
+    paymongoSubAccountId: z.string().trim().optional(),
+  }),
+});

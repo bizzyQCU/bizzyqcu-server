@@ -35,6 +35,7 @@ export class AdminController {
     );
     res.status(200).json({
       success: true,
+      data: result.items,
       ...result,
     });
   });
@@ -47,6 +48,7 @@ export class AdminController {
     );
     res.status(200).json({
       success: true,
+      data: result.items,
       ...result,
     });
   });
@@ -90,6 +92,7 @@ export class AdminController {
     );
     res.status(200).json({
       success: true,
+      data: result.items,
       ...result,
     });
   });
@@ -105,6 +108,7 @@ export class AdminController {
     );
     res.status(200).json({
       success: true,
+      data: result.items,
       ...result,
     });
   });
