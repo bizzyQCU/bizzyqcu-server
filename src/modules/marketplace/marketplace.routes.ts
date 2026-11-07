@@ -6,8 +6,10 @@ import {
   createProductSchema,
   createStoreSchema,
   updateStoreSchema,
+  storeIdSchema,
   productIdSchema,
   updateProductSchema,
+  sellerProductsQuerySchema,
 } from "./marketplace.validation";
 import { requireAuth } from "../../middlewares/auth.middleware";
 import { isSeller, isVerified } from "../../middlewares/rbac.middleware";
@@ -53,11 +55,39 @@ router.delete(
   StoreController.deleteMyStore
 );
 
+// Public: Get store profile by ID or slug
+router.get(
+  "/stores/:id",
+  validate(storeIdSchema),
+  StoreController.getStoreById
+);
+
+router.get(
+  "/stores/slug/:slug",
+  StoreController.getStoreBySlug
+);
+
 // ==========================================
-// PRODUCT LISTING
+// SELLER PRODUCT MANAGEMENT (CRUD)
 // ==========================================
 
-// Create a product listing
+// Seller: List all products in own store (with pagination and status filters)
+router.get(
+  "/seller/products",
+  ...sellerAccess,
+  validate(sellerProductsQuerySchema),
+  MarketplaceController.getSellerProducts
+);
+
+// Seller: Get details of own product (including PENDING / REJECTED status)
+router.get(
+  "/seller/products/:id",
+  ...sellerAccess,
+  validate(productIdSchema),
+  MarketplaceController.getSellerProduct
+);
+
+// Seller: Create a product listing
 router.post(
   "/products",
   ...sellerAccess,
@@ -65,14 +95,7 @@ router.post(
   MarketplaceController.createProduct
 );
 
-// Product Listing CRUD
-router.get(
-  "/products/:id",
-  ...sellerAccess,
-  validate(productIdSchema),
-  MarketplaceController.getProduct
-);
-
+// Seller: Update product
 router.patch(
   "/products/:id",
   ...sellerAccess,
@@ -80,6 +103,7 @@ router.patch(
   MarketplaceController.updateProduct
 );
 
+// Seller: Delete product
 router.delete(
   "/products/:id",
   ...sellerAccess,
@@ -87,8 +111,21 @@ router.delete(
   MarketplaceController.deleteProduct
 );
 
+// ==========================================
+// PUBLIC BUYER PRODUCT VIEW
+// ==========================================
+
+// Public: Product details for buyers and visitors
+router.get(
+  "/products/:id",
+  validate(productIdSchema),
+  MarketplaceController.getPublicProduct
+);
+
+// Mount categories
 router.use("/categories", categoryRoutes);
-// Existing catalog routes (Karl's implementation)
+
+// Mount catalog routes (Karl's implementation)
 router.use(catalogRoutes);
 
 export default router;

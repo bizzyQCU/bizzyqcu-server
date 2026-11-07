@@ -4,11 +4,13 @@ import { AppError } from "../../utils/AppError";
 export class CategoryService {
   // Generate a URL-friendly unique slug
   static async generateUniqueSlug(name: string, excludeId?: string) {
-    const baseSlug = name
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
+    const baseSlug =
+      name
+        .toLowerCase()
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "category";
 
     let slug = baseSlug;
     let counter = 1;

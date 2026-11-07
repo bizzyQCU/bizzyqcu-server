@@ -14,7 +14,6 @@ export const createProductSchema = z.object({
   }),
 });
 
-
 export const createStoreSchema = z.object({
   body: z.object({
     name: z.string().trim().min(3, "Store name must be at least 3 characters"),
@@ -32,12 +31,18 @@ export const updateStoreSchema = z.object({
     logoUrl: z.string().url().nullable().optional(),
     bannerUrl: z.string().url().nullable().optional(),
     pickupLocation: z.string().trim().nullable().optional(),
+    isOpen: z.boolean().optional(),
   }).refine(
     (data) => Object.keys(data).length > 0,
     { message: "At least one field must be provided." }
   ),
 });
 
+export const storeIdSchema = z.object({
+  params: z.object({
+    id: z.string().uuid("Invalid store ID"),
+  }),
+});
 
 // ==========================================
 // PRODUCT LISTING CRUD VALIDATION
@@ -66,4 +71,13 @@ export const updateProductSchema = z.object({
     (data) => Object.keys(data).length > 0,
     { message: "At least one field must be provided." }
   ),
+});
+
+// Validate seller product list query parameters
+export const sellerProductsQuerySchema = z.object({
+  query: z.object({
+    page: z.coerce.number().int().positive().optional(),
+    limit: z.coerce.number().int().positive().max(100).optional(),
+    approvalStatus: z.enum(["PENDING", "VERIFIED", "REJECTED"]).optional(),
+  }).optional(),
 });

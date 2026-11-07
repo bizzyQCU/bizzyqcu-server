@@ -1,4 +1,3 @@
-
 import { Request, Response } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { StoreService } from "./store.service";
@@ -21,6 +20,26 @@ export class StoreController {
   // Get the authenticated seller's store
   static getMyStore = asyncHandler(async (req: Request, res: Response) => {
     const store = await StoreService.getMyStore(req.user!.id);
+
+    res.status(200).json({
+      success: true,
+      data: store,
+    });
+  });
+
+  // Get public store profile by ID
+  static getStoreById = asyncHandler(async (req: Request, res: Response) => {
+    const store = await StoreService.getStoreById(String(req.params.id));
+
+    res.status(200).json({
+      success: true,
+      data: store,
+    });
+  });
+
+  // Get public store profile by slug
+  static getStoreBySlug = asyncHandler(async (req: Request, res: Response) => {
+    const store = await StoreService.getStoreBySlug(String(req.params.slug));
 
     res.status(200).json({
       success: true,

@@ -3,6 +3,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { MarketplaceService } from "./marketplace.service";
 
 export class MarketplaceController {
+  // Create a product listing
   static createProduct = asyncHandler(async (req: Request, res: Response) => {
     const product = await MarketplaceService.createProduct(
       req.user!.id,
@@ -16,10 +17,34 @@ export class MarketplaceController {
     });
   });
 
-  static getProduct = asyncHandler(async (req: Request, res: Response) => {
+  // Public: Retrieve product details
+  static getPublicProduct = asyncHandler(async (req: Request, res: Response) => {
     const productId = String(req.params.id);
+    const product = await MarketplaceService.getPublicProduct(productId);
 
-    const product = await MarketplaceService.getProduct(
+    res.status(200).json({
+      success: true,
+      data: product,
+    });
+  });
+
+  // Seller: List own products
+  static getSellerProducts = asyncHandler(async (req: Request, res: Response) => {
+    const result = await MarketplaceService.getSellerProducts(
+      req.user!.id,
+      req.query as any
+    );
+
+    res.status(200).json({
+      success: true,
+      ...result,
+    });
+  });
+
+  // Seller: Retrieve own product details (even if pending or rejected)
+  static getSellerProduct = asyncHandler(async (req: Request, res: Response) => {
+    const productId = String(req.params.id);
+    const product = await MarketplaceService.getSellerProduct(
       req.user!.id,
       productId
     );
@@ -30,9 +55,9 @@ export class MarketplaceController {
     });
   });
 
+  // Seller: Update product
   static updateProduct = asyncHandler(async (req: Request, res: Response) => {
     const productId = String(req.params.id);
-
     const product = await MarketplaceService.updateProduct(
       req.user!.id,
       productId,
@@ -46,9 +71,9 @@ export class MarketplaceController {
     });
   });
 
+  // Seller: Delete product
   static deleteProduct = asyncHandler(async (req: Request, res: Response) => {
     const productId = String(req.params.id);
-
     const result = await MarketplaceService.deleteProduct(
       req.user!.id,
       productId

@@ -1,4 +1,3 @@
-
 import { prisma } from "../../config/db";
 import { AppError } from "../../utils/AppError";
 
@@ -16,11 +15,12 @@ type UpdateStoreData = {
   logoUrl?: string | null;
   bannerUrl?: string | null;
   pickupLocation?: string | null;
+  isOpen?: boolean;
 };
 
 export class StoreService {
   // Generate a unique URL-friendly store slug
-  private static async generateUniqueSlug(name: string) {
+  private static async generateUniqueSlug(name: string, excludeId?: string) {
     const baseSlug =
       name
         .toLowerCase()
@@ -33,8 +33,11 @@ export class StoreService {
     let counter = 2;
 
     while (
-      await prisma.store.findUnique({
-        where: { slug },
+      await prisma.store.findFirst({
+        where: {
+          slug,
+          ...(excludeId ? { NOT: { id: excludeId } } : {}),
+        },
         select: { id: true },
       })
     ) {
@@ -99,6 +102,7 @@ export class StoreService {
           select: {
             sellerType: true,
             verificationStatus: true,
+            isPaymongoVerified: true,
           },
         },
       },
@@ -106,6 +110,76 @@ export class StoreService {
 
     if (!store) {
       throw new AppError("You have not registered a store yet.", 404);
+    }
+
+    return store;
+  }
+
+  // Retrieve public store profile by ID
+  static async getStoreById(storeId: string) {
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      include: {
+        sellerProfile: {
+          select: {
+            sellerType: true,
+            isPaymongoVerified: true,
+          },
+        },
+        products: {
+          where: {
+            approvalStatus: "VERIFIED",
+            isAvailable: true,
+          },
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            stockQuantity: true,
+            imageUrls: true,
+            category: { select: { id: true, name: true, slug: true } },
+          },
+        },
+      },
+    });
+
+    if (!store || store.approvalStatus !== "VERIFIED") {
+      throw new AppError("Store not found or not yet approved.", 404);
+    }
+
+    return store;
+  }
+
+  // Retrieve public store profile by slug
+  static async getStoreBySlug(slug: string) {
+    const store = await prisma.store.findUnique({
+      where: { slug },
+      include: {
+        sellerProfile: {
+          select: {
+            sellerType: true,
+            isPaymongoVerified: true,
+          },
+        },
+        products: {
+          where: {
+            approvalStatus: "VERIFIED",
+            isAvailable: true,
+          },
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            stockQuantity: true,
+            imageUrls: true,
+            category: { select: { id: true, name: true, slug: true } },
+          },
+        },
+      },
+    });
+
+    if (!store || store.approvalStatus !== "VERIFIED") {
+      throw new AppError("Store not found or not yet approved.", 404);
     }
 
     return store;
@@ -124,21 +198,20 @@ export class StoreService {
       throw new AppError("You have not registered a store yet.", 404);
     }
 
+    const updateData: any = { ...data };
+
     if (data.name && data.name !== store.name) {
       const existingName = await prisma.store.findUnique({
         where: { name: data.name },
         select: { id: true },
       });
 
-      if (existingName) {
+      if (existingName && existingName.id !== store.id) {
         throw new AppError("This store name is already taken.", 409);
       }
-    }
 
-    const updateData = { ...data };
-
-    if (data.name && data.name !== store.name) {
       updateData.name = data.name;
+      updateData.slug = await this.generateUniqueSlug(data.name, store.id);
     }
 
     return prisma.store.update({
