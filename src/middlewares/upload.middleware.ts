@@ -15,7 +15,7 @@ const ALLOWED_MIME_TYPES = new Set([
 export const upload = multer({
   storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 5 * 1024 * 1024, // 5MB limit
   },
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_MIME_TYPES.has(file.mimetype)) {
@@ -23,7 +23,7 @@ export const upload = multer({
     } else {
       cb(
         new AppError(
-          "Invalid file type. Only images (JPEG, PNG, WebP) and PDF documents are allowed.",
+          "Invalid file type. Only images (JPEG, PNG, WebP, GIF) and PDF documents are allowed.",
           400
         ) as any,
         false

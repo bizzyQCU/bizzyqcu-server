@@ -157,7 +157,7 @@ export class OrdersController {
 
     res.status(200).json({
       success: true,
-      message: "PayMongo sub-account linked and verified successfully.",
+      message: result.message,
       data: result,
     });
   });

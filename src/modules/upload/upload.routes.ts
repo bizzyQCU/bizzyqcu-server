@@ -15,10 +15,10 @@ router.post(
   UploadController.uploadSingle
 );
 
-// Multiple files upload endpoint (e.g. product gallery, evidence photos)
+// Multiple files upload endpoint (e.g. product gallery, evidence photos - max 5 files)
 router.post(
   "/multiple",
-  upload.array("files", 10),
+  upload.array("files", 5),
   UploadController.uploadMultiple
 );
 

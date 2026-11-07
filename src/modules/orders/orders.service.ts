@@ -477,7 +477,9 @@ export class OrdersService {
                 method: data.paymentMethod,
                 status: "PENDING",
                 sellerSubAccountId:
-                  store.sellerProfile?.paymongoSubAccountId || null,
+                  data.paymentMethod === "GCASH_PAYMONGO"
+                    ? store.sellerProfile?.paymongoSubAccountId || null
+                    : null,
               },
             },
           },

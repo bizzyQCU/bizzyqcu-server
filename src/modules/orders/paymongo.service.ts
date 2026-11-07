@@ -37,11 +37,6 @@ export class PayMongoService {
     }
 
     try {
-      const headers: Record<string, string> = {};
-      if (data.sellerSubAccountId) {
-        headers["Account-ID"] = data.sellerSubAccountId;
-      }
-
       const response =
         await paymongoClient.post<CheckoutSessionResponse>(
           "/v2/checkout_sessions",
@@ -65,8 +60,7 @@ export class PayMongoService {
                 },
               },
             },
-          },
-          { headers }
+          }
         );
 
       return {

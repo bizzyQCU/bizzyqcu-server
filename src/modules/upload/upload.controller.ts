@@ -43,15 +43,16 @@ export class UploadController {
     }
 
     const folder = (req.body.folder || req.query.folder || "uploads") as string;
-    const results = await Promise.all(
-      files.map((file) =>
-        UploadService.uploadBuffer(file.buffer, {
-          folder,
-          filename: file.originalname,
-          mimetype: file.mimetype,
-        })
-      )
-    );
+    const results = [];
+    // Process uploads sequentially to bound network concurrency and memory pressure
+    for (const file of files) {
+      const uploaded = await UploadService.uploadBuffer(file.buffer, {
+        folder,
+        filename: file.originalname,
+        mimetype: file.mimetype,
+      });
+      results.push(uploaded);
+    }
 
     res.status(201).json({
       success: true,

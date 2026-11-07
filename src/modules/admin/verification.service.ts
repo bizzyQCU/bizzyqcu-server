@@ -388,8 +388,8 @@ export class VerificationService {
         where: { id: sellerProfileId },
         data: {
           isPaymongoVerified: input.isPaymongoVerified,
-          ...(input.paymongoSubAccountId
-            ? { paymongoSubAccountId: input.paymongoSubAccountId }
+          ...(effectiveSubAccountId
+            ? { paymongoSubAccountId: effectiveSubAccountId }
             : {}),
         },
         select: {
