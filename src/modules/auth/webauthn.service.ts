@@ -428,7 +428,7 @@ export class WebAuthnService {
     }
 
     // ========================================
-    // 5. PASSKEY MANAGEMENT (List & Delete)
+    // 5. REGISTERED DEVICE & PASSKEY MANAGEMENT (CRUD)
     // ========================================
 
     static async listPasskeys(userId: string) {
@@ -445,6 +445,62 @@ export class WebAuthnService {
             },
             orderBy: {
                 createdAt: "desc",
+            },
+        });
+    }
+
+    static async getPasskey(userId: string, passkeyId: string) {
+        const passkey = await prisma.passkeyCredential.findFirst({
+            where: {
+                id: passkeyId,
+                userId,
+            },
+            select: {
+                id: true,
+                deviceName: true,
+                deviceType: true,
+                transports: true,
+                backedUp: true,
+                createdAt: true,
+                lastUsedAt: true,
+            },
+        });
+
+        if (!passkey) {
+            throw new AppError("Registered device not found or unauthorized.", 404);
+        }
+
+        return passkey;
+    }
+
+    static async updatePasskeyDeviceName(
+        userId: string,
+        passkeyId: string,
+        deviceName: string
+    ) {
+        const passkey = await prisma.passkeyCredential.findFirst({
+            where: {
+                id: passkeyId,
+                userId,
+            },
+            select: { id: true },
+        });
+
+        if (!passkey) {
+            throw new AppError("Registered device not found or unauthorized.", 404);
+        }
+
+        return prisma.passkeyCredential.update({
+            where: { id: passkeyId },
+            data: { deviceName },
+            select: {
+                id: true,
+                deviceName: true,
+                deviceType: true,
+                transports: true,
+                backedUp: true,
+                createdAt: true,
+                lastUsedAt: true,
             },
         });
     }

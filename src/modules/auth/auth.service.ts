@@ -1,6 +1,9 @@
 import {
     prisma,
+    Prisma,
     QcuMemberType,
+    UserRole,
+    SellerType,
     VerificationStatus,
 } from "../../config/db";
 
@@ -36,6 +39,9 @@ export class AuthService {
         qcuIdPhotoUrl: string;
         liveSelfieUrl: string;
         password?: string;
+        role?: "BUYER" | "SELLER";
+        sellerType?: SellerType;
+        supportingDocumentUrl?: string;
     }) {
         const existing = await prisma.user.findFirst({
             where: {
@@ -53,30 +59,453 @@ export class AuthService {
             );
         }
 
+        const isSellerRegistration = data.role === "SELLER";
+
+        if (isSellerRegistration) {
+            if (data.memberType !== "STUDENT") {
+                throw new AppError(
+                    "Only students can register as campus sellers. Faculty and staff must be buyers.",
+                    400
+                );
+            }
+
+            if (!data.sellerType || !data.supportingDocumentUrl) {
+                throw new AppError(
+                    "Seller registration requires seller type and supporting endorsement document URL.",
+                    400
+                );
+            }
+        }
+
         const passwordHash = data.password
             ? await hashPassword(data.password)
             : undefined;
 
-        return await prisma.user.create({
+        return await prisma.$transaction(async (tx) => {
+            const user = await tx.user.create({
+                data: {
+                    qcuIdNumber: data.qcuIdNumber,
+                    email: data.email,
+                    fullName: data.fullName,
+                    memberType: data.memberType,
+                    qcuIdPhotoUrl: data.qcuIdPhotoUrl,
+                    liveSelfieUrl: data.liveSelfieUrl,
+                    passwordHash,
+                    role: isSellerRegistration ? UserRole.SELLER : UserRole.BUYER,
+                    verificationStatus: VerificationStatus.PENDING,
+                },
+                select: {
+                    id: true,
+                    qcuIdNumber: true,
+                    email: true,
+                    fullName: true,
+                    memberType: true,
+                    role: true,
+                    verificationStatus: true,
+                    createdAt: true,
+                },
+            });
+
+            let sellerProfile = null;
+            if (isSellerRegistration) {
+                sellerProfile = await tx.sellerProfile.create({
+                    data: {
+                        userId: user.id,
+                        sellerType: data.sellerType!,
+                        supportingDocumentUrl: data.supportingDocumentUrl!,
+                        verificationStatus: VerificationStatus.PENDING,
+                    },
+                    select: {
+                        id: true,
+                        sellerType: true,
+                        supportingDocumentUrl: true,
+                        verificationStatus: true,
+                        createdAt: true,
+                    },
+                });
+            }
+
+            return {
+                ...user,
+                sellerProfile,
+            };
+        });
+    }
+
+    // ==========================================
+    // SELLER ENDORSEMENT APPLICATION (Manuel)
+    // ==========================================
+
+    static async applyForSeller(
+        userId: string,
+        data: {
+            sellerType: SellerType;
+            supportingDocumentUrl: string;
+        }
+    ) {
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, memberType: true, role: true },
+        });
+
+        if (!user) {
+            throw new AppError("User account not found.", 404);
+        }
+
+        if (user.memberType !== "STUDENT") {
+            throw new AppError(
+                "Only students can apply as campus sellers. Faculty and staff must remain buyers.",
+                400
+            );
+        }
+
+        const existingProfile = await prisma.sellerProfile.findUnique({
+            where: { userId },
+        });
+
+        if (existingProfile) {
+            if (existingProfile.verificationStatus === VerificationStatus.VERIFIED) {
+                throw new AppError("You already have an approved seller profile.", 409);
+            }
+
+            if (existingProfile.verificationStatus === VerificationStatus.PENDING) {
+                throw new AppError(
+                    "Your seller application is currently pending administrator verification.",
+                    409
+                );
+            }
+
+            // If REJECTED, update endorsement documents and put back to PENDING
+            const updatedProfile = await prisma.sellerProfile.update({
+                where: { id: existingProfile.id },
+                data: {
+                    sellerType: data.sellerType,
+                    supportingDocumentUrl: data.supportingDocumentUrl,
+                    verificationStatus: VerificationStatus.PENDING,
+                    rejectionReason: null,
+                },
+            });
+
+            await prisma.user.update({
+                where: { id: userId },
+                data: { role: UserRole.SELLER },
+            });
+
+            return updatedProfile;
+        }
+
+        // Create new seller profile application
+        const newProfile = await prisma.sellerProfile.create({
             data: {
-                qcuIdNumber: data.qcuIdNumber,
-                email: data.email,
-                fullName: data.fullName,
-                memberType: data.memberType,
-                qcuIdPhotoUrl: data.qcuIdPhotoUrl,
-                liveSelfieUrl: data.liveSelfieUrl,
-                passwordHash,
+                userId,
+                sellerType: data.sellerType,
+                supportingDocumentUrl: data.supportingDocumentUrl,
                 verificationStatus: VerificationStatus.PENDING,
+            },
+        });
+
+        await prisma.user.update({
+            where: { id: userId },
+            data: { role: UserRole.SELLER },
+        });
+
+        return newProfile;
+    }
+
+    // ==========================================
+    // ACCOUNT STATUS TRACKING CRUD (Manuel)
+    // ==========================================
+
+    /**
+     * Retrieve authenticated user's account and seller verification status
+     */
+    static async getAccountStatus(userId: string) {
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                qcuIdNumber: true,
+                fullName: true,
+                email: true,
+                memberType: true,
+                role: true,
+                verificationStatus: true,
+                rejectionReason: true,
+                verifiedAt: true,
+                createdAt: true,
+                sellerProfile: {
+                    select: {
+                        id: true,
+                        sellerType: true,
+                        supportingDocumentUrl: true,
+                        verificationStatus: true,
+                        rejectionReason: true,
+                        isPaymongoVerified: true,
+                        createdAt: true,
+                        updatedAt: true,
+                    },
+                },
+                _count: {
+                    select: { passkeys: true },
+                },
+            },
+        });
+
+        if (!user) {
+            throw new AppError("User account not found.", 404);
+        }
+
+        const canAccessMarketplace =
+            user.verificationStatus === VerificationStatus.VERIFIED;
+        const canSell =
+            user.role === UserRole.SELLER &&
+            user.sellerProfile?.verificationStatus === VerificationStatus.VERIFIED;
+
+        return {
+            userId: user.id,
+            qcuIdNumber: user.qcuIdNumber,
+            fullName: user.fullName,
+            email: user.email,
+            memberType: user.memberType,
+            role: user.role,
+            accountStatus: user.verificationStatus,
+            accountRejectionReason: user.rejectionReason,
+            accountVerifiedAt: user.verifiedAt,
+            sellerStatus: user.sellerProfile?.verificationStatus ?? null,
+            sellerProfile: user.sellerProfile,
+            registeredDeviceCount: user._count.passkeys,
+            canAccessMarketplace,
+            canSell,
+        };
+    }
+
+    /**
+     * Pre-login / Public Status Check: allows users awaiting approval to check application status
+     */
+    static async checkPublicAccountStatus(identifier: string) {
+        const cleanIdentifier = identifier.trim();
+
+        const user = await prisma.user.findFirst({
+            where: {
+                OR: [
+                    { qcuIdNumber: cleanIdentifier },
+                    { email: cleanIdentifier.toLowerCase() },
+                ],
+            },
+            select: {
+                qcuIdNumber: true,
+                fullName: true,
+                role: true,
+                verificationStatus: true,
+                rejectionReason: true,
+                verifiedAt: true,
+                createdAt: true,
+                sellerProfile: {
+                    select: {
+                        sellerType: true,
+                        verificationStatus: true,
+                        rejectionReason: true,
+                    },
+                },
+            },
+        });
+
+        if (!user) {
+            throw new AppError(
+                "No registration record found for the provided identifier.",
+                404
+            );
+        }
+
+        return {
+            qcuIdNumber: user.qcuIdNumber,
+            fullName: user.fullName,
+            role: user.role,
+            verificationStatus: user.verificationStatus,
+            rejectionReason: user.rejectionReason,
+            verifiedAt: user.verifiedAt,
+            createdAt: user.createdAt,
+            sellerVerificationStatus: user.sellerProfile?.verificationStatus ?? null,
+            sellerRejectionReason: user.sellerProfile?.rejectionReason ?? null,
+        };
+    }
+
+    /**
+     * Resubmit user verification documents after rejection
+     */
+    static async resubmitUserVerification(
+        userId: string,
+        data: { qcuIdPhotoUrl?: string; liveSelfieUrl?: string }
+    ) {
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, verificationStatus: true },
+        });
+
+        if (!user) {
+            throw new AppError("User account not found.", 404);
+        }
+
+        if (user.verificationStatus === VerificationStatus.VERIFIED) {
+            throw new AppError("Your account is already verified.", 400);
+        }
+
+        return prisma.user.update({
+            where: { id: userId },
+            data: {
+                ...(data.qcuIdPhotoUrl ? { qcuIdPhotoUrl: data.qcuIdPhotoUrl } : {}),
+                ...(data.liveSelfieUrl ? { liveSelfieUrl: data.liveSelfieUrl } : {}),
+                verificationStatus: VerificationStatus.PENDING,
+                rejectionReason: null,
             },
             select: {
                 id: true,
                 qcuIdNumber: true,
-                email: true,
                 fullName: true,
-                memberType: true,
+                verificationStatus: true,
+                updatedAt: true,
+            },
+        });
+    }
+
+    /**
+     * Resubmit seller endorsement documents after rejection
+     */
+    static async resubmitSellerVerification(
+        userId: string,
+        data: { sellerType?: SellerType; supportingDocumentUrl: string }
+    ) {
+        const sellerProfile = await prisma.sellerProfile.findUnique({
+            where: { userId },
+        });
+
+        if (!sellerProfile) {
+            throw new AppError(
+                "No seller profile found. Please register as a seller first.",
+                404
+            );
+        }
+
+        if (sellerProfile.verificationStatus === VerificationStatus.VERIFIED) {
+            throw new AppError("Your seller profile is already verified.", 400);
+        }
+
+        return prisma.sellerProfile.update({
+            where: { id: sellerProfile.id },
+            data: {
+                ...(data.sellerType ? { sellerType: data.sellerType } : {}),
+                supportingDocumentUrl: data.supportingDocumentUrl,
+                verificationStatus: VerificationStatus.PENDING,
+                rejectionReason: null,
+            },
+            select: {
+                id: true,
+                sellerType: true,
+                supportingDocumentUrl: true,
+                verificationStatus: true,
+                updatedAt: true,
+            },
+        });
+    }
+
+    /**
+     * Admin: List users by verification status with pagination
+     */
+    static async adminListUsersStatus(query: {
+        status?: VerificationStatus;
+        role?: UserRole;
+        memberType?: QcuMemberType;
+        page?: number;
+        limit?: number;
+    }) {
+        const page = query.page && query.page > 0 ? Number(query.page) : 1;
+        const limit = query.limit && query.limit > 0 ? Number(query.limit) : 20;
+
+        const where: Prisma.UserWhereInput = {
+            ...(query.status ? { verificationStatus: query.status } : {}),
+            ...(query.role ? { role: query.role } : {}),
+            ...(query.memberType ? { memberType: query.memberType } : {}),
+        };
+
+        const [users, total] = await Promise.all([
+            prisma.user.findMany({
+                where,
+                skip: (page - 1) * limit,
+                take: limit,
+                orderBy: { createdAt: "desc" },
+                select: {
+                    id: true,
+                    qcuIdNumber: true,
+                    fullName: true,
+                    email: true,
+                    memberType: true,
+                    role: true,
+                    verificationStatus: true,
+                    rejectionReason: true,
+                    verifiedAt: true,
+                    createdAt: true,
+                    sellerProfile: {
+                        select: {
+                            id: true,
+                            sellerType: true,
+                            supportingDocumentUrl: true,
+                            verificationStatus: true,
+                            rejectionReason: true,
+                        },
+                    },
+                },
+            }),
+            prisma.user.count({ where }),
+        ]);
+
+        return {
+            users,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+            },
+        };
+    }
+
+    /**
+     * Admin: Update user verification status (VERIFIED or REJECTED)
+     */
+    static async adminUpdateUserStatus(
+        adminId: string,
+        targetUserId: string,
+        status: VerificationStatus,
+        rejectionReason?: string
+    ) {
+        const targetUser = await prisma.user.findUnique({
+            where: { id: targetUserId },
+            select: { id: true },
+        });
+
+        if (!targetUser) {
+            throw new AppError("Target user not found.", 404);
+        }
+
+        const isApproved = status === VerificationStatus.VERIFIED;
+
+        return prisma.user.update({
+            where: { id: targetUserId },
+            data: {
+                verificationStatus: status,
+                verifiedByAdminId: isApproved ? adminId : null,
+                verifiedAt: isApproved ? new Date() : null,
+                rejectionReason: isApproved ? null : rejectionReason || null,
+            },
+            select: {
+                id: true,
+                qcuIdNumber: true,
+                fullName: true,
+                email: true,
                 role: true,
                 verificationStatus: true,
-                createdAt: true,
+                rejectionReason: true,
+                verifiedAt: true,
             },
         });
     }
