@@ -8,7 +8,7 @@ export class DisputesController {
   static listDuplicates = asyncHandler(async (req: Request, res: Response) => {
     const query = parseListDuplicatesQuery(req.query);
     const result = await DisputesService.getDuplicates(query);
-    res.status(200).json({ success: true, ...result });
+    res.status(200).json({ success: true, data: result.items, ...result });
   });
 
   /** PATCH /api/v1/admin/duplicates/:userId */

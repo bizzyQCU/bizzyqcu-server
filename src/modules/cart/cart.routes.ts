@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { CartController } from "./cart.controller";
 import { requireAuth } from "../../middlewares/auth.middleware";
-import { requireRole } from "../../middlewares/rbac.middleware";
+import { canPurchase } from "../../middlewares/rbac.middleware";
 import { validate } from "../../middlewares/validate.middleware";
 import {
   addToCartSchema,
@@ -11,9 +11,9 @@ import {
 
 const router = Router();
 
-// Cart is protected and accessible to BUYER accounts
+// Cart is protected and accessible to BUYER and SELLER accounts
 router.use(requireAuth);
-router.use(requireRole("BUYER"));
+router.use(canPurchase);
 
 router.get("/", CartController.getCart);
 router.post("/items", validate(addToCartSchema), CartController.addItem);

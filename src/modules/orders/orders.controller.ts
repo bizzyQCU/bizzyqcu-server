@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { OrdersService } from "./orders.service";
+import { PayMongoService } from "./paymongo.service";
 
 export class OrdersController {
   /**
@@ -140,6 +141,37 @@ export class OrdersController {
       success: true,
       message: "Order message sent successfully.",
       data: message,
+    });
+  });
+
+  /**
+   * POST /api/v1/orders/seller/paymongo-onboard
+   * Onboards or updates seller PayMongo sub-account for GCash acceptance.
+   */
+  static onboardPaymongo = asyncHandler(async (req: Request, res: Response) => {
+    const result = await PayMongoService.onboardSeller(req.user!.id, {
+      accountName: req.body.accountName,
+      gcashNumber: req.body.gcashNumber,
+      bankCode: req.body.bankCode,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result,
+    });
+  });
+
+  /**
+   * GET /api/v1/orders/seller/paymongo-status
+   * Checks the authenticated seller's PayMongo account status.
+   */
+  static getPaymongoStatus = asyncHandler(async (req: Request, res: Response) => {
+    const status = await PayMongoService.getSellerPaymongoStatus(req.user!.id);
+
+    res.status(200).json({
+      success: true,
+      data: status,
     });
   });
 }

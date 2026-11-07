@@ -3,7 +3,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { CatalogService } from "./catalog.service";
 import { InventoryService } from "./inventory.service";
 import { DashboardService } from "./dashboard.service";
-import { parseSearchProductsQuery } from "./catalog.validation";
+import { parseSearchProductsQuery, parseSellerAnalyticsQuery } from "./catalog.validation";
 
 export class CatalogController {
   static searchProducts = asyncHandler(async (req: Request, res: Response) => {
@@ -32,6 +32,12 @@ export class CatalogController {
 
   static getSellerDashboard = asyncHandler(async (req: Request, res: Response) => {
     const data = await DashboardService.getSellerDashboard(req.user!.id);
+    res.status(200).json({ success: true, data });
+  });
+
+  static getSellerAnalytics = asyncHandler(async (req: Request, res: Response) => {
+    const query = parseSellerAnalyticsQuery(req.query);
+    const data = await DashboardService.getSellerAnalytics(req.user!.id, query);
     res.status(200).json({ success: true, data });
   });
 }

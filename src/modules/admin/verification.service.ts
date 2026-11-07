@@ -94,6 +94,8 @@ export class VerificationService {
               supportingDocumentUrl: true,
               verificationStatus: true,
               rejectionReason: true,
+              paymongoSubAccountId: true,
+              isPaymongoVerified: true,
               createdAt: true,
               user: {
                 select: {
@@ -346,6 +348,78 @@ export class VerificationService {
       });
 
       return { ...updated, rolePromoted };
+    });
+  }
+
+  /** PATCH /admin/verifications/sellers/:sellerProfileId/paymongo */
+  static async reviewSellerPaymongo(
+    sellerProfileId: string,
+    input: {
+      adminId: string;
+      isPaymongoVerified: boolean;
+      paymongoSubAccountId?: string;
+      ipAddress?: string | null;
+    }
+  ) {
+    const seller = await prisma.sellerProfile.findUnique({
+      where: { id: sellerProfileId },
+      select: {
+        id: true,
+        userId: true,
+        isPaymongoVerified: true,
+        paymongoSubAccountId: true,
+        verificationStatus: true,
+      },
+    });
+    if (!seller) throw new AppError("Seller profile not found.", 404);
+
+    const effectiveSubAccountId =
+      input.paymongoSubAccountId?.trim() || seller.paymongoSubAccountId?.trim();
+
+    if (input.isPaymongoVerified && !effectiveSubAccountId) {
+      throw new AppError(
+        "A valid PayMongo sub-account ID is required before marking the seller as verified for online payouts.",
+        400
+      );
+    }
+
+    return prisma.$transaction(async (tx: any) => {
+      const updated = await tx.sellerProfile.update({
+        where: { id: sellerProfileId },
+        data: {
+          isPaymongoVerified: input.isPaymongoVerified,
+          ...(effectiveSubAccountId
+            ? { paymongoSubAccountId: effectiveSubAccountId }
+            : {}),
+        },
+        select: {
+          id: true,
+          userId: true,
+          sellerType: true,
+          paymongoSubAccountId: true,
+          isPaymongoVerified: true,
+          verificationStatus: true,
+          updatedAt: true,
+        },
+      });
+
+      await logAudit(tx, {
+        actorId: input.adminId,
+        subsystem: "ADMIN",
+        action: input.isPaymongoVerified
+          ? "VERIFIED_PAYMONGO_ACCOUNT"
+          : "UNVERIFIED_PAYMONGO_ACCOUNT",
+        targetId: sellerProfileId,
+        ipAddress: requestIp(input.ipAddress),
+        details: {
+          targetType: "SELLER_PROFILE",
+          previousIsPaymongoVerified: seller.isPaymongoVerified,
+          newIsPaymongoVerified: input.isPaymongoVerified,
+          paymongoSubAccountId: updated.paymongoSubAccountId,
+        },
+      });
+
+      return updated;
     });
   }
 

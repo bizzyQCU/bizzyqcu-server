@@ -15,7 +15,7 @@ export class VerificationController {
   static list = asyncHandler(async (req: Request, res: Response) => {
     const query = parseListVerificationsQuery(req.query);
     const result = await VerificationService.getVerificationQueue(query);
-    res.status(200).json({ success: true, ...result });
+    res.status(200).json({ success: true, data: result.items, ...result });
   });
 
   /** PATCH /api/v1/admin/verifications/users/:userId */
@@ -40,6 +40,24 @@ export class VerificationController {
     res.status(200).json({
       success: true,
       message: `Seller verification has been updated to ${req.body.status}.`,
+      data,
+    });
+  });
+
+  /** PATCH /api/v1/admin/verifications/sellers/:sellerProfileId/paymongo */
+  static reviewSellerPaymongo = asyncHandler(async (req: Request, res: Response) => {
+    const data = await VerificationService.reviewSellerPaymongo(
+      req.params.sellerProfileId as string,
+      {
+        adminId: req.user!.id,
+        isPaymongoVerified: req.body.isPaymongoVerified,
+        paymongoSubAccountId: req.body.paymongoSubAccountId,
+        ipAddress: req.ip,
+      }
+    );
+    res.status(200).json({
+      success: true,
+      message: `Seller PayMongo status has been updated to ${req.body.isPaymongoVerified ? "VERIFIED" : "UNVERIFIED"}.`,
       data,
     });
   });
