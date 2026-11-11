@@ -25,14 +25,6 @@ import { sendOtpEmail } from "../../utils/email";
 // Dummy bcrypt hash to neutralize user enumeration timing attacks
 const DUMMY_HASH = "$2a$12$e8uq0e1gYq03e.sT2c7GPe7wBskrJ9rMh7g8tE0o8J7H7B.d4B8eq";
 
-function maskFullName(fullName: string): string {
-    return fullName
-        .trim()
-        .split(/\s+/)
-        .map((part) => (part.length <= 1 ? `${part}*` : `${part[0]}${"*".repeat(Math.min(part.length - 1, 3))}`))
-        .join(" ");
-}
-
 export class AuthService {
     // ==========================================
     // USER & SELLER REGISTRATION (Manuel & Vizconde)
@@ -278,56 +270,6 @@ export class AuthService {
             registeredDeviceCount: user._count.passkeys,
             canAccessMarketplace,
             canSell,
-        };
-    }
-
-    /**
-     * Public pre-login status lookup (rate-limited; masks fullName to limit PII scraping).
-     */
-    static async checkPublicAccountStatus(identifier: string) {
-        const cleanIdentifier = identifier.trim();
-
-        const user = await prisma.user.findFirst({
-            where: {
-                OR: [
-                    { qcuIdNumber: cleanIdentifier },
-                    { email: { equals: cleanIdentifier.toLowerCase(), mode: "insensitive" } },
-                ],
-            },
-            select: {
-                qcuIdNumber: true,
-                fullName: true,
-                role: true,
-                verificationStatus: true,
-                rejectionReason: true,
-                verifiedAt: true,
-                createdAt: true,
-                sellerProfile: {
-                    select: {
-                        verificationStatus: true,
-                        rejectionReason: true,
-                    },
-                },
-            },
-        });
-
-        if (!user) {
-            throw new AppError(
-                "No registration record found for the provided identifier.",
-                404
-            );
-        }
-
-        return {
-            qcuIdNumber: user.qcuIdNumber,
-            fullName: maskFullName(user.fullName),
-            role: user.role,
-            verificationStatus: user.verificationStatus,
-            rejectionReason: user.rejectionReason,
-            verifiedAt: user.verifiedAt,
-            createdAt: user.createdAt,
-            sellerVerificationStatus: user.sellerProfile?.verificationStatus ?? null,
-            sellerRejectionReason: user.sellerProfile?.rejectionReason ?? null,
         };
     }
 

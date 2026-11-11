@@ -80,17 +80,6 @@ export class AuthController {
         });
     });
 
-    static checkPublicAccountStatus = asyncHandler(async (req: Request, res: Response) => {
-        const status = await AuthService.checkPublicAccountStatus(
-            req.body.identifier
-        );
-
-        res.status(200).json({
-            success: true,
-            data: status,
-        });
-    });
-
     static resubmitUserVerification = asyncHandler(async (req: Request, res: Response) => {
         const updated = await AuthService.resubmitUserVerification(
             req.user!.id,

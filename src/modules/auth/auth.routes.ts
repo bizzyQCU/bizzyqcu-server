@@ -11,7 +11,6 @@ import {
     registerSellerSchema,
     resubmitUserVerificationSchema,
     resubmitSellerVerificationSchema,
-    checkAccountStatusSchema,
     verificationUploadSchema,
     deviceIdSchema,
     updateDeviceSchema,
@@ -30,7 +29,6 @@ import {
     requestOtpLimiter,
     verifyOtpLimiter,
     verificationUploadLimiter,
-    statusLookupLimiter,
     webauthnLimiter,
 } from "../../middlewares/otp-rate-limit.middleware";
 
@@ -83,13 +81,6 @@ router.get(
     "/status",
     requireAuth,
     AuthController.getAccountStatus
-);
-
-router.post(
-    "/check-status",
-    statusLookupLimiter,
-    validate(checkAccountStatusSchema),
-    AuthController.checkPublicAccountStatus
 );
 
 router.post(

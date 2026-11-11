@@ -31,11 +31,6 @@ export const verificationUploadLimiter = createAuthLimiter(
     "Too many verification uploads. Please try again later."
 );
 
-export const statusLookupLimiter = createAuthLimiter(
-    15,
-    "Too many status check requests. Please try again later."
-);
-
 export const webauthnLimiter = createAuthLimiter(
     30,
     "Too many passkey requests. Please try again later."

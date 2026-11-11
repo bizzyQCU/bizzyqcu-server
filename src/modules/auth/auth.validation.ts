@@ -101,12 +101,6 @@ export const resubmitSellerVerificationSchema = z.object({
     }),
 });
 
-export const checkAccountStatusSchema = z.object({
-    body: z.object({
-        identifier: z.string().trim().min(1, "QCU ID or email is required"),
-    }),
-});
-
 export const verificationUploadSchema = z.object({
     body: z.object({
         documentType: z.enum(["QCU_ID", "LIVE_SELFIE", "SELLER_ENDORSEMENT"]),
