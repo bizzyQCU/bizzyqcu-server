@@ -505,6 +505,7 @@ export class AuthService {
                 otpCode: otpHash,
                 otpExpiresAt,
             },
+            select: { id: true },
         });
 
         try {
@@ -520,6 +521,7 @@ export class AuthService {
                     otpCode: null,
                     otpExpiresAt: null,
                 },
+                select: { id: true },
             });
 
             throw new AppError(
@@ -700,6 +702,7 @@ export class AuthService {
         await prisma.user.update({
             where: { id: userId },
             data: { passwordHash },
+            select: { id: true },
         });
 
         return { message: "Password updated successfully." };

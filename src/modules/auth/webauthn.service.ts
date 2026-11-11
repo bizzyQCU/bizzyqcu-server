@@ -66,6 +66,7 @@ const storeChallenge = async (
         data: {
             currentChallenge: JSON.stringify(stored),
         },
+        select: { id: true },
     });
 };
 
