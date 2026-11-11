@@ -18,46 +18,34 @@ import {
     hashOtp,
     verifyOtp,
     OTP_EXPIRY_MINUTES,
+    createRegistrationOtpChallenge,
+    verifyRegistrationOtpChallenge,
+    claimRegistrationEmailToken,
 } from "../../utils/otp";
 
 import { sendOtpEmail } from "../../utils/email";
+import { isDevTestAccountDirectLoginEnabled } from "../../config/test-accounts";
 
 // Dummy bcrypt hash to neutralize user enumeration timing attacks
 const DUMMY_HASH = "$2a$12$e8uq0e1gYq03e.sT2c7GPe7wBskrJ9rMh7g8tE0o8J7H7B.d4B8eq";
-
-function maskFullName(fullName: string): string {
-    return fullName
-        .trim()
-        .split(/\s+/)
-        .map((part) => (part.length <= 1 ? `${part}*` : `${part[0]}${"*".repeat(Math.min(part.length - 1, 3))}`))
-        .join(" ");
-}
 
 export class AuthService {
     // ==========================================
     // USER & SELLER REGISTRATION (Manuel & Vizconde)
     // ==========================================
 
-    static async register(data: {
-        qcuIdNumber: string;
+    static async requestRegistrationOtp(data: {
         email: string;
-        fullName: string;
-        memberType: QcuMemberType;
-        qcuIdPhotoUrl: string;
-        liveSelfieUrl: string;
-        password?: string;
-        role?: "BUYER" | "SELLER";
-        sellerType?: SellerType;
-        supportingDocumentUrl?: string;
+        qcuIdNumber?: string;
     }) {
-        const cleanQcuId = data.qcuIdNumber.trim();
         const normalizedEmail = data.email.trim().toLowerCase();
+        const cleanQcuId = data.qcuIdNumber?.trim();
 
         const existing = await prisma.user.findFirst({
             where: {
                 OR: [
-                    { qcuIdNumber: cleanQcuId },
                     { email: { equals: normalizedEmail, mode: "insensitive" } },
+                    ...(cleanQcuId ? [{ qcuIdNumber: cleanQcuId }] : []),
                 ],
             },
             select: { id: true },
@@ -70,78 +58,183 @@ export class AuthService {
             );
         }
 
-        const isSellerRegistration = data.role === "SELLER";
+        const { otp, otpToken, expiresInSeconds } =
+            createRegistrationOtpChallenge(normalizedEmail);
 
-        if (isSellerRegistration) {
-            if (data.memberType !== "STUDENT") {
-                throw new AppError(
-                    "Only students can register as campus sellers. Faculty and staff must be buyers.",
-                    400
-                );
+        try {
+            await sendOtpEmail(normalizedEmail, otp, "registration");
+        } catch (err) {
+            if (err instanceof AppError) {
+                throw err;
             }
-
-            if (!data.sellerType || !data.supportingDocumentUrl) {
-                throw new AppError(
-                    "Seller registration requires seller type and supporting endorsement document URL.",
-                    400
-                );
-            }
+            throw new AppError(
+                "Unable to send verification email. Please try again later.",
+                503
+            );
         }
 
-        const passwordHash = data.password
-            ? await hashPassword(data.password)
-            : undefined;
+        return {
+            message: "Verification code sent to your email address.",
+            otpToken,
+            expiresInSeconds,
+        };
+    }
 
-        return await prisma.$transaction(async (tx) => {
-            // Keep UserRole.BUYER until an admin approves the seller endorsement (PROMOTE_SELLER_ROLE_ON_APPROVAL).
-            const user = await tx.user.create({
-                data: {
-                    qcuIdNumber: cleanQcuId,
-                    email: normalizedEmail,
-                    fullName: data.fullName.trim(),
-                    memberType: data.memberType,
-                    qcuIdPhotoUrl: data.qcuIdPhotoUrl,
-                    liveSelfieUrl: data.liveSelfieUrl,
-                    passwordHash,
-                    role: UserRole.BUYER,
-                    verificationStatus: VerificationStatus.PENDING,
+    static async verifyRegistrationOtp(data: {
+        email: string;
+        otp: string;
+        otpToken: string;
+    }) {
+        const result = verifyRegistrationOtpChallenge(data);
+
+        if (!result.ok) {
+            if (result.reason === "too_many_attempts") {
+                throw new AppError(
+                    "Too many incorrect verification attempts. Please request a new code.",
+                    400
+                );
+            }
+
+            if (result.reason === "expired") {
+                throw new AppError(
+                    "Verification code has expired. Please request a new code.",
+                    400
+                );
+            }
+
+            throw new AppError("Invalid verification code.", 400);
+        }
+
+        return {
+            message: "Email verified successfully.",
+            emailVerificationToken: result.emailVerificationToken,
+            expiresInSeconds: result.expiresInSeconds,
+        };
+    }
+
+    static async register(data: {
+        qcuIdNumber: string;
+        email: string;
+        emailVerificationToken: string;
+        fullName: string;
+        memberType?: QcuMemberType;
+        qcuIdPhotoUrl: string;
+        liveSelfieUrl: string;
+        password?: string;
+        role?: "BUYER" | "SELLER";
+        sellerType?: SellerType;
+        supportingDocumentUrl?: string;
+    }) {
+        const cleanQcuId = data.qcuIdNumber.trim();
+        const normalizedEmail = data.email.trim().toLowerCase();
+        const memberType = data.memberType ?? QcuMemberType.STUDENT;
+
+        if (memberType !== QcuMemberType.STUDENT) {
+            throw new AppError(
+                "Only QCU students can register. Faculty and staff registration is not allowed.",
+                400
+            );
+        }
+
+        const emailClaim = claimRegistrationEmailToken(
+            normalizedEmail,
+            data.emailVerificationToken
+        );
+
+        if (!emailClaim) {
+            throw new AppError(
+                "Email verification is invalid or expired. Please verify your email again.",
+                400
+            );
+        }
+
+        try {
+            const existing = await prisma.user.findFirst({
+                where: {
+                    OR: [
+                        { qcuIdNumber: cleanQcuId },
+                        { email: { equals: normalizedEmail, mode: "insensitive" } },
+                    ],
                 },
-                select: {
-                    id: true,
-                    qcuIdNumber: true,
-                    email: true,
-                    fullName: true,
-                    memberType: true,
-                    role: true,
-                    verificationStatus: true,
-                    createdAt: true,
-                },
+                select: { id: true },
             });
 
-            let sellerProfile = null;
+            if (existing) {
+                throw new AppError(
+                    "A user with this QCU ID or email already exists.",
+                    400
+                );
+            }
+
+            const isSellerRegistration = data.role === "SELLER";
+
             if (isSellerRegistration) {
-                sellerProfile = await tx.sellerProfile.create({
+                if (!data.sellerType || !data.supportingDocumentUrl) {
+                    throw new AppError(
+                        "Seller registration requires seller type and supporting endorsement document URL.",
+                        400
+                    );
+                }
+            }
+
+            const passwordHash = data.password
+                ? await hashPassword(data.password)
+                : undefined;
+
+            return await prisma.$transaction(async (tx) => {
+                // Keep UserRole.BUYER until an admin approves the seller endorsement (PROMOTE_SELLER_ROLE_ON_APPROVAL).
+                const user = await tx.user.create({
                     data: {
-                        userId: user.id,
-                        sellerType: data.sellerType!,
-                        supportingDocumentUrl: data.supportingDocumentUrl!,
+                        qcuIdNumber: cleanQcuId,
+                        email: normalizedEmail,
+                        fullName: data.fullName.trim(),
+                        memberType,
+                        qcuIdPhotoUrl: data.qcuIdPhotoUrl,
+                        liveSelfieUrl: data.liveSelfieUrl,
+                        passwordHash,
+                        role: UserRole.BUYER,
                         verificationStatus: VerificationStatus.PENDING,
                     },
                     select: {
                         id: true,
-                        sellerType: true,
-                        supportingDocumentUrl: true,
+                        qcuIdNumber: true,
+                        email: true,
+                        fullName: true,
+                        memberType: true,
+                        role: true,
                         verificationStatus: true,
                         createdAt: true,
                     },
                 });
-            }
 
-            return {
-                ...user,
-                sellerProfile,
-            };
-        });
+                let sellerProfile = null;
+                if (isSellerRegistration) {
+                    sellerProfile = await tx.sellerProfile.create({
+                        data: {
+                            userId: user.id,
+                            sellerType: data.sellerType!,
+                            supportingDocumentUrl: data.supportingDocumentUrl!,
+                            verificationStatus: VerificationStatus.PENDING,
+                        },
+                        select: {
+                            id: true,
+                            sellerType: true,
+                            supportingDocumentUrl: true,
+                            verificationStatus: true,
+                            createdAt: true,
+                        },
+                    });
+                }
+
+                return {
+                    ...user,
+                    sellerProfile,
+                };
+            });
+        } catch (err) {
+            emailClaim.release();
+            throw err;
+        }
     }
 
     // ==========================================
@@ -281,56 +374,6 @@ export class AuthService {
         };
     }
 
-    /**
-     * Public pre-login status lookup (rate-limited; masks fullName to limit PII scraping).
-     */
-    static async checkPublicAccountStatus(identifier: string) {
-        const cleanIdentifier = identifier.trim();
-
-        const user = await prisma.user.findFirst({
-            where: {
-                OR: [
-                    { qcuIdNumber: cleanIdentifier },
-                    { email: { equals: cleanIdentifier.toLowerCase(), mode: "insensitive" } },
-                ],
-            },
-            select: {
-                qcuIdNumber: true,
-                fullName: true,
-                role: true,
-                verificationStatus: true,
-                rejectionReason: true,
-                verifiedAt: true,
-                createdAt: true,
-                sellerProfile: {
-                    select: {
-                        verificationStatus: true,
-                        rejectionReason: true,
-                    },
-                },
-            },
-        });
-
-        if (!user) {
-            throw new AppError(
-                "No registration record found for the provided identifier.",
-                404
-            );
-        }
-
-        return {
-            qcuIdNumber: user.qcuIdNumber,
-            fullName: maskFullName(user.fullName),
-            role: user.role,
-            verificationStatus: user.verificationStatus,
-            rejectionReason: user.rejectionReason,
-            verifiedAt: user.verifiedAt,
-            createdAt: user.createdAt,
-            sellerVerificationStatus: user.sellerProfile?.verificationStatus ?? null,
-            sellerRejectionReason: user.sellerProfile?.rejectionReason ?? null,
-        };
-    }
-
     static async resubmitUserVerification(
         userId: string,
         data: { qcuIdPhotoUrl?: string; liveSelfieUrl?: string }
@@ -409,6 +452,32 @@ export class AuthService {
     // PASSWORD LOGIN - REQUEST OTP (Vizconde)
     // ==========================================
 
+    private static buildAuthSession(user: {
+        id: string;
+        qcuIdNumber: string;
+        fullName: string;
+        email: string;
+        role: UserRole;
+        verificationStatus: VerificationStatus;
+    }) {
+        const accessToken = generateAccessToken(user.id);
+
+        return {
+            token: accessToken, // Compatible with client expectations
+            accessToken,
+            tokenType: "Bearer",
+            expiresIn: 3600,
+            user: {
+                id: user.id,
+                qcuIdNumber: user.qcuIdNumber,
+                fullName: user.fullName,
+                email: user.email,
+                role: user.role,
+                verificationStatus: user.verificationStatus,
+            },
+        };
+    }
+
     static async requestPasswordOtp(data: {
         qcuIdNumber: string;
         password: string;
@@ -419,8 +488,13 @@ export class AuthService {
             },
             select: {
                 id: true,
+                qcuIdNumber: true,
+                fullName: true,
                 email: true,
+                role: true,
+                verificationStatus: true,
                 passwordHash: true,
+                otpCode: true,
             },
         });
 
@@ -445,6 +519,21 @@ export class AuthService {
             );
         }
 
+        if (isDevTestAccountDirectLoginEnabled(user.qcuIdNumber)) {
+            if (user.otpCode) {
+                await prisma.user.update({
+                    where: { id: user.id },
+                    data: { otpCode: null, otpExpiresAt: null },
+                    select: { id: true },
+                });
+            }
+
+            return {
+                message: "Login successful.",
+                data: AuthService.buildAuthSession(user),
+            };
+        }
+
         // Generate a new six-digit OTP
         const otp = generateOtp();
 
@@ -463,6 +552,7 @@ export class AuthService {
                 otpCode: otpHash,
                 otpExpiresAt,
             },
+            select: { id: true },
         });
 
         try {
@@ -478,6 +568,7 @@ export class AuthService {
                     otpCode: null,
                     otpExpiresAt: null,
                 },
+                select: { id: true },
             });
 
             throw new AppError(
@@ -571,22 +662,7 @@ export class AuthService {
         }
 
         // Generate JWT only after successful OTP verification
-        const accessToken = generateAccessToken(user.id);
-
-        return {
-            token: accessToken, // Compatible with client expects
-            accessToken,
-            tokenType: "Bearer",
-            expiresIn: 3600,
-            user: {
-                id: user.id,
-                qcuIdNumber: user.qcuIdNumber,
-                fullName: user.fullName,
-                email: user.email,
-                role: user.role,
-                verificationStatus: user.verificationStatus,
-            },
-        };
+        return AuthService.buildAuthSession(user);
     }
 
     // ==========================================
@@ -658,6 +734,7 @@ export class AuthService {
         await prisma.user.update({
             where: { id: userId },
             data: { passwordHash },
+            select: { id: true },
         });
 
         return { message: "Password updated successfully." };

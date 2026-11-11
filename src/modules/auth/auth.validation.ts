@@ -30,8 +30,27 @@ const SELLER_TYPE_ENUM = z.enum([
 ]);
 
 // ==========================================
-// REGISTRATION SCHEMAS (Manuel & Vizconde)
+// REGISTRATION & EMAIL OTP SCHEMAS (Manuel & Vizconde)
 // ==========================================
+
+export const requestRegistrationOtpSchema = z.object({
+    body: z.object({
+        email: z.string().trim().email("Invalid email address").transform((v) => v.toLowerCase()),
+        qcuIdNumber: z
+            .string()
+            .trim()
+            .regex(/^\d{2}-\d{4}$/, "QCU ID format must be YY-NNNN (e.g., 24-0001)")
+            .optional(),
+    }),
+});
+
+export const verifyRegistrationOtpSchema = z.object({
+    body: z.object({
+        email: z.string().trim().email("Invalid email address").transform((v) => v.toLowerCase()),
+        otp: z.string().trim().regex(/^\d{6}$/, "OTP must contain exactly 6 digits"),
+        otpToken: z.string().trim().min(1, "Verification challenge token is required"),
+    }),
+});
 
 export const registerUserSchema = z.object({
     body: z.object({
@@ -40,8 +59,18 @@ export const registerUserSchema = z.object({
             "QCU ID format must be YY-NNNN (e.g., 24-0001)"
         ),
         email: z.string().trim().email("Invalid email address").transform((v) => v.toLowerCase()),
+        emailVerificationToken: z
+            .string()
+            .trim()
+            .min(1, "Please verify your email address before submitting registration"),
         fullName: z.string().trim().min(2, "Full name must be at least 2 characters"),
-        memberType: z.enum(["STUDENT", "FACULTY", "STAFF"]),
+        memberType: z
+            .enum(["STUDENT", "FACULTY", "STAFF"])
+            .optional()
+            .default("STUDENT")
+            .refine((v) => v === "STUDENT", {
+                message: "Only QCU students can register. Faculty and staff registration is not allowed.",
+            }),
         qcuIdPhotoUrl: trustedDocumentUrl("Valid QCU ID photo URL required"),
         liveSelfieUrl: trustedDocumentUrl("Valid live selfie photo URL required"),
         password: z.string().min(8, "Password must be at least 8 characters").optional(),
@@ -50,13 +79,6 @@ export const registerUserSchema = z.object({
         supportingDocumentUrl: trustedDocumentUrl("Valid supporting document URL required").optional(),
     }).superRefine((data, ctx) => {
         if (data.role === "SELLER") {
-            if (data.memberType !== "STUDENT") {
-                ctx.addIssue({
-                    code: z.ZodIssueCode.custom,
-                    message: "Only students can register as campus sellers. Faculty and staff must be buyers.",
-                    path: ["memberType"],
-                });
-            }
             if (!data.sellerType) {
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
@@ -98,12 +120,6 @@ export const resubmitSellerVerificationSchema = z.object({
     body: z.object({
         sellerType: SELLER_TYPE_ENUM.optional(),
         supportingDocumentUrl: trustedDocumentUrl("Valid supporting document URL required"),
-    }),
-});
-
-export const checkAccountStatusSchema = z.object({
-    body: z.object({
-        identifier: z.string().trim().min(1, "QCU ID or email is required"),
     }),
 });
 

@@ -1,12 +1,18 @@
 
-import { rateLimit } from "express-rate-limit";
+import { rateLimit, type Options } from "express-rate-limit";
+import { isDevTestAccountDirectLoginEnabled } from "../config/test-accounts";
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 
-function createAuthLimiter(limit: number, message: string) {
+function createAuthLimiter(
+    limit: number,
+    message: string,
+    skip?: Options["skip"]
+) {
     return rateLimit({
         windowMs: FIFTEEN_MINUTES_MS,
         limit,
+        skip,
         standardHeaders: true,
         legacyHeaders: false,
         message: {
@@ -18,7 +24,8 @@ function createAuthLimiter(limit: number, message: string) {
 
 export const requestOtpLimiter = createAuthLimiter(
     5,
-    "Too many OTP requests. Please try again later."
+    "Too many OTP requests. Please try again later.",
+    (req) => isDevTestAccountDirectLoginEnabled(String(req.body?.qcuIdNumber ?? ""))
 );
 
 export const verifyOtpLimiter = createAuthLimiter(
@@ -29,11 +36,6 @@ export const verifyOtpLimiter = createAuthLimiter(
 export const verificationUploadLimiter = createAuthLimiter(
     20,
     "Too many verification uploads. Please try again later."
-);
-
-export const statusLookupLimiter = createAuthLimiter(
-    15,
-    "Too many status check requests. Please try again later."
 );
 
 export const webauthnLimiter = createAuthLimiter(

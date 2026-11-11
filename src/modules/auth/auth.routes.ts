@@ -7,11 +7,12 @@ import { optionalAuth, requireAuth } from "../../middlewares/auth.middleware";
 import { verificationUpload } from "../../middlewares/upload.middleware";
 
 import {
+    requestRegistrationOtpSchema,
+    verifyRegistrationOtpSchema,
     registerUserSchema,
     registerSellerSchema,
     resubmitUserVerificationSchema,
     resubmitSellerVerificationSchema,
-    checkAccountStatusSchema,
     verificationUploadSchema,
     deviceIdSchema,
     updateDeviceSchema,
@@ -30,7 +31,6 @@ import {
     requestOtpLimiter,
     verifyOtpLimiter,
     verificationUploadLimiter,
-    statusLookupLimiter,
     webauthnLimiter,
 } from "../../middlewares/otp-rate-limit.middleware";
 
@@ -47,6 +47,20 @@ router.post(
     verificationUpload.single("file"),
     validate(verificationUploadSchema),
     AuthController.uploadVerificationDocument
+);
+
+router.post(
+    "/register/otp/request",
+    requestOtpLimiter,
+    validate(requestRegistrationOtpSchema),
+    AuthController.requestRegistrationOtp
+);
+
+router.post(
+    "/register/otp/verify",
+    verifyOtpLimiter,
+    validate(verifyRegistrationOtpSchema),
+    AuthController.verifyRegistrationOtp
 );
 
 router.post(
@@ -83,13 +97,6 @@ router.get(
     "/status",
     requireAuth,
     AuthController.getAccountStatus
-);
-
-router.post(
-    "/check-status",
-    statusLookupLimiter,
-    validate(checkAccountStatusSchema),
-    AuthController.checkPublicAccountStatus
 );
 
 router.post(

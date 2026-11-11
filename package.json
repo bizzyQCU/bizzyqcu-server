@@ -10,6 +10,7 @@
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
     "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:seed:test": "tsx prisma/seed-test-accounts.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
