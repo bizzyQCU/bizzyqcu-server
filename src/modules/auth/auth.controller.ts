@@ -44,6 +44,36 @@ export class AuthController {
         res.status(201).json({ success: true, data });
     });
 
+    static requestRegistrationOtp = asyncHandler(
+        async (req: Request, res: Response) => {
+            const result = await AuthService.requestRegistrationOtp(req.body);
+
+            res.status(200).json({
+                success: true,
+                message: result.message,
+                data: {
+                    otpToken: result.otpToken,
+                    expiresInSeconds: result.expiresInSeconds,
+                },
+            });
+        }
+    );
+
+    static verifyRegistrationOtp = asyncHandler(
+        async (req: Request, res: Response) => {
+            const result = await AuthService.verifyRegistrationOtp(req.body);
+
+            res.status(200).json({
+                success: true,
+                message: result.message,
+                data: {
+                    emailVerificationToken: result.emailVerificationToken,
+                    expiresInSeconds: result.expiresInSeconds,
+                },
+            });
+        }
+    );
+
     static register = asyncHandler(async (req: Request, res: Response) => {
         const user = await AuthService.register(req.body);
 

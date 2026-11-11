@@ -30,8 +30,27 @@ const SELLER_TYPE_ENUM = z.enum([
 ]);
 
 // ==========================================
-// REGISTRATION SCHEMAS (Manuel & Vizconde)
+// REGISTRATION & EMAIL OTP SCHEMAS (Manuel & Vizconde)
 // ==========================================
+
+export const requestRegistrationOtpSchema = z.object({
+    body: z.object({
+        email: z.string().trim().email("Invalid email address").transform((v) => v.toLowerCase()),
+        qcuIdNumber: z
+            .string()
+            .trim()
+            .regex(/^\d{2}-\d{4}$/, "QCU ID format must be YY-NNNN (e.g., 24-0001)")
+            .optional(),
+    }),
+});
+
+export const verifyRegistrationOtpSchema = z.object({
+    body: z.object({
+        email: z.string().trim().email("Invalid email address").transform((v) => v.toLowerCase()),
+        otp: z.string().trim().regex(/^\d{6}$/, "OTP must contain exactly 6 digits"),
+        otpToken: z.string().trim().min(1, "Verification challenge token is required"),
+    }),
+});
 
 export const registerUserSchema = z.object({
     body: z.object({
@@ -40,6 +59,10 @@ export const registerUserSchema = z.object({
             "QCU ID format must be YY-NNNN (e.g., 24-0001)"
         ),
         email: z.string().trim().email("Invalid email address").transform((v) => v.toLowerCase()),
+        emailVerificationToken: z
+            .string()
+            .trim()
+            .min(1, "Please verify your email address before submitting registration"),
         fullName: z.string().trim().min(2, "Full name must be at least 2 characters"),
         memberType: z.enum(["STUDENT", "FACULTY", "STAFF"]),
         qcuIdPhotoUrl: trustedDocumentUrl("Valid QCU ID photo URL required"),

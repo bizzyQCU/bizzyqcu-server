@@ -7,6 +7,8 @@ import { optionalAuth, requireAuth } from "../../middlewares/auth.middleware";
 import { verificationUpload } from "../../middlewares/upload.middleware";
 
 import {
+    requestRegistrationOtpSchema,
+    verifyRegistrationOtpSchema,
     registerUserSchema,
     registerSellerSchema,
     resubmitUserVerificationSchema,
@@ -45,6 +47,20 @@ router.post(
     verificationUpload.single("file"),
     validate(verificationUploadSchema),
     AuthController.uploadVerificationDocument
+);
+
+router.post(
+    "/register/otp/request",
+    requestOtpLimiter,
+    validate(requestRegistrationOtpSchema),
+    AuthController.requestRegistrationOtp
+);
+
+router.post(
+    "/register/otp/verify",
+    verifyOtpLimiter,
+    validate(verifyRegistrationOtpSchema),
+    AuthController.verifyRegistrationOtp
 );
 
 router.post(
