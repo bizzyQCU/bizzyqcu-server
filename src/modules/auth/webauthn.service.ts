@@ -7,7 +7,7 @@ import {
     type AuthenticationResponseJSON,
 } from "@simplewebauthn/server";
 
-import { prisma } from "../../config/db";
+import { prisma, UserRole, VerificationStatus } from "../../config/db";
 import { AppError } from "../../utils/AppError";
 import { generateAccessToken } from "../../utils/jwt";
 import { webAuthnConfig } from "../../config/webauthn";
@@ -18,6 +18,34 @@ import { webAuthnConfig } from "../../config/webauthn";
 
 // A WebAuthn challenge expires after five minutes.
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+// Unauthenticated passkey setup right after /register is limited to freshly created PENDING accounts with no passkeys yet.
+const INITIAL_PASSKEY_WINDOW_MS = 15 * 60 * 1000;
+
+export interface RegistrationAuthContext {
+    isAuthenticated: boolean;
+}
+
+function assertCanUnauthenticatedRegister(user: {
+    role: UserRole;
+    verificationStatus: VerificationStatus;
+    createdAt: Date;
+    passkeyCount: number;
+}) {
+    const withinOnboardingWindow =
+        Date.now() - user.createdAt.getTime() <= INITIAL_PASSKEY_WINDOW_MS;
+
+    if (
+        user.role === UserRole.ADMIN ||
+        user.verificationStatus !== VerificationStatus.PENDING ||
+        user.passkeyCount > 0 ||
+        !withinOnboardingWindow
+    ) {
+        throw new AppError(
+            "Authentication required to register a passkey for this account.",
+            401
+        );
+    }
+}
 
 interface StoredChallenge {
     challenge: string;
@@ -76,7 +104,8 @@ export class WebAuthnService {
     // ========================================
 
     static async generateRegistrationOptions(
-        userId: string
+        userId: string,
+        ctx: RegistrationAuthContext = { isAuthenticated: true }
     ) {
         const user = await prisma.user.findUnique({
             where: { id: userId },
@@ -84,6 +113,9 @@ export class WebAuthnService {
                 id: true,
                 qcuIdNumber: true,
                 fullName: true,
+                role: true,
+                verificationStatus: true,
+                createdAt: true,
                 passkeys: {
                     select: {
                         id: true,
@@ -95,6 +127,15 @@ export class WebAuthnService {
 
         if (!user) {
             throw new AppError("User account not found.", 404);
+        }
+
+        if (!ctx.isAuthenticated) {
+            assertCanUnauthenticatedRegister({
+                role: user.role,
+                verificationStatus: user.verificationStatus,
+                createdAt: user.createdAt,
+                passkeyCount: user.passkeys.length,
+            });
         }
 
         const options = await generateRegistrationOptions({
@@ -132,18 +173,32 @@ export class WebAuthnService {
     static async verifyRegistration(
         userId: string,
         response: RegistrationResponseJSON,
-        deviceName?: string
+        deviceName?: string,
+        ctx: RegistrationAuthContext = { isAuthenticated: true }
     ) {
         const user = await prisma.user.findUnique({
             where: { id: userId },
             select: {
                 id: true,
+                role: true,
+                verificationStatus: true,
+                createdAt: true,
                 currentChallenge: true,
+                _count: { select: { passkeys: true } },
             },
         });
 
         if (!user) {
             throw new AppError("User account not found.", 404);
+        }
+
+        if (!ctx.isAuthenticated) {
+            assertCanUnauthenticatedRegister({
+                role: user.role,
+                verificationStatus: user.verificationStatus,
+                createdAt: user.createdAt,
+                passkeyCount: user._count.passkeys,
+            });
         }
 
         const expectedChallenge = readChallenge(
@@ -428,7 +483,7 @@ export class WebAuthnService {
     }
 
     // ========================================
-    // 5. PASSKEY MANAGEMENT (List & Delete)
+    // 5. REGISTERED DEVICE & PASSKEY MANAGEMENT (CRUD)
     // ========================================
 
     static async listPasskeys(userId: string) {
@@ -449,16 +504,89 @@ export class WebAuthnService {
         });
     }
 
-    static async deletePasskey(userId: string, passkeyId: string) {
+    static async getPasskey(userId: string, passkeyId: string) {
         const passkey = await prisma.passkeyCredential.findFirst({
             where: {
                 id: passkeyId,
                 userId,
             },
+            select: {
+                id: true,
+                deviceName: true,
+                deviceType: true,
+                transports: true,
+                backedUp: true,
+                createdAt: true,
+                lastUsedAt: true,
+            },
         });
 
         if (!passkey) {
+            throw new AppError("Registered device not found or unauthorized.", 404);
+        }
+
+        return passkey;
+    }
+
+    static async updatePasskeyDeviceName(
+        userId: string,
+        passkeyId: string,
+        deviceName: string
+    ) {
+        const passkey = await prisma.passkeyCredential.findFirst({
+            where: {
+                id: passkeyId,
+                userId,
+            },
+            select: { id: true },
+        });
+
+        if (!passkey) {
+            throw new AppError("Registered device not found or unauthorized.", 404);
+        }
+
+        return prisma.passkeyCredential.update({
+            where: { id: passkeyId },
+            data: { deviceName },
+            select: {
+                id: true,
+                deviceName: true,
+                deviceType: true,
+                transports: true,
+                backedUp: true,
+                createdAt: true,
+                lastUsedAt: true,
+            },
+        });
+    }
+
+    static async deletePasskey(userId: string, passkeyId: string) {
+        const [passkey, user] = await Promise.all([
+            prisma.passkeyCredential.findFirst({
+                where: {
+                    id: passkeyId,
+                    userId,
+                },
+                select: { id: true },
+            }),
+            prisma.user.findUnique({
+                where: { id: userId },
+                select: {
+                    passwordHash: true,
+                    _count: { select: { passkeys: true } },
+                },
+            }),
+        ]);
+
+        if (!passkey) {
             throw new AppError("Passkey not found or unauthorized.", 404);
+        }
+
+        if (user && !user.passwordHash && user._count.passkeys <= 1) {
+            throw new AppError(
+                "Set a password before deleting your only registered passkey.",
+                400
+            );
         }
 
         await prisma.passkeyCredential.delete({

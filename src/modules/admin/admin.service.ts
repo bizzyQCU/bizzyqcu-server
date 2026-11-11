@@ -22,12 +22,13 @@ export class AdminService {
    */
   static async createComplaint(data: {
     complainantId: string;
+    userRole?: string;
     orderId?: string;
     subject: string;
     description: string;
     evidenceUrls?: string[];
   }) {
-    // If orderId is provided, ensure order exists and user is either buyer or seller
+    // If orderId is provided, ensure order exists and user is either buyer or seller (or admin)
     if (data.orderId) {
       const order = await prisma.order.findUnique({
         where: { id: data.orderId },
@@ -48,8 +49,9 @@ export class AdminService {
 
       const isBuyer = order.buyerId === data.complainantId;
       const isSeller = order.store?.sellerProfile?.userId === data.complainantId;
+      const isAdmin = data.userRole === "ADMIN";
 
-      if (!isBuyer && !isSeller) {
+      if (!isBuyer && !isSeller && !isAdmin) {
         throw new AppError(
           "You can only submit a complaint for an order where you are the buyer or seller.",
           403
@@ -92,13 +94,22 @@ export class AdminService {
    * View all complaints with pagination and filtering (Admin only).
    */
   static async getComplaints(query: GetComplaintsQuery) {
-    const { page, limit, status, orderId, complainantId } = query;
+    const { page, limit, status, orderId, complainantId, search } = query;
     const { skip, take } = skipTake(page, limit);
 
     const where: Prisma.ComplaintWhereInput = {
       ...(status && { status }),
       ...(orderId && { orderId }),
       ...(complainantId && { complainantId }),
+      ...(search && {
+        OR: [
+          { subject: { contains: search, mode: "insensitive" } },
+          { description: { contains: search, mode: "insensitive" } },
+          { complainant: { fullName: { contains: search, mode: "insensitive" } } },
+          { complainant: { email: { contains: search, mode: "insensitive" } } },
+          { order: { orderNumber: { contains: search, mode: "insensitive" } } },
+        ],
+      }),
     };
 
     const [items, total] = await Promise.all([
@@ -331,6 +342,45 @@ export class AdminService {
       items,
       pagination: buildPagination(page, limit, total),
     };
+  }
+
+  /**
+   * Explicitly record a manual administrative activity entry (AuditLog actions for
+   * automated state transitions remain strictly reserved in server transactions).
+   */
+  static async recordAuditLog(data: {
+    actorId: string;
+    subsystem: AuditSubsystem;
+    action: string;
+    targetId?: string;
+    details?: Record<string, unknown>;
+    ipAddress?: string | null;
+  }) {
+    const taggedDetails: Prisma.InputJsonValue = {
+      ...(data.details ?? {}),
+      manualEntry: true,
+    } as Prisma.InputJsonValue;
+
+    return await prisma.auditLog.create({
+      data: {
+        actorId: data.actorId,
+        subsystem: data.subsystem,
+        action: data.action,
+        targetId: data.targetId ?? null,
+        details: taggedDetails,
+        ipAddress: requestIp(data.ipAddress),
+      },
+      include: {
+        actor: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+    });
   }
 
   // ---------------------------------------------------------------------------

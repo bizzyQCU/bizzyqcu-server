@@ -1,6 +1,8 @@
 import {
     prisma,
     QcuMemberType,
+    UserRole,
+    SellerType,
     VerificationStatus,
 } from "../../config/db";
 
@@ -23,9 +25,17 @@ import { sendOtpEmail } from "../../utils/email";
 // Dummy bcrypt hash to neutralize user enumeration timing attacks
 const DUMMY_HASH = "$2a$12$e8uq0e1gYq03e.sT2c7GPe7wBskrJ9rMh7g8tE0o8J7H7B.d4B8eq";
 
+function maskFullName(fullName: string): string {
+    return fullName
+        .trim()
+        .split(/\s+/)
+        .map((part) => (part.length <= 1 ? `${part}*` : `${part[0]}${"*".repeat(Math.min(part.length - 1, 3))}`))
+        .join(" ");
+}
+
 export class AuthService {
     // ==========================================
-    // USER REGISTRATION (Manuel & Vizconde)
+    // USER & SELLER REGISTRATION (Manuel & Vizconde)
     // ==========================================
 
     static async register(data: {
@@ -36,14 +46,21 @@ export class AuthService {
         qcuIdPhotoUrl: string;
         liveSelfieUrl: string;
         password?: string;
+        role?: "BUYER" | "SELLER";
+        sellerType?: SellerType;
+        supportingDocumentUrl?: string;
     }) {
+        const cleanQcuId = data.qcuIdNumber.trim();
+        const normalizedEmail = data.email.trim().toLowerCase();
+
         const existing = await prisma.user.findFirst({
             where: {
                 OR: [
-                    { qcuIdNumber: data.qcuIdNumber },
-                    { email: data.email },
+                    { qcuIdNumber: cleanQcuId },
+                    { email: { equals: normalizedEmail, mode: "insensitive" } },
                 ],
             },
+            select: { id: true },
         });
 
         if (existing) {
@@ -53,30 +70,337 @@ export class AuthService {
             );
         }
 
+        const isSellerRegistration = data.role === "SELLER";
+
+        if (isSellerRegistration) {
+            if (data.memberType !== "STUDENT") {
+                throw new AppError(
+                    "Only students can register as campus sellers. Faculty and staff must be buyers.",
+                    400
+                );
+            }
+
+            if (!data.sellerType || !data.supportingDocumentUrl) {
+                throw new AppError(
+                    "Seller registration requires seller type and supporting endorsement document URL.",
+                    400
+                );
+            }
+        }
+
         const passwordHash = data.password
             ? await hashPassword(data.password)
             : undefined;
 
-        return await prisma.user.create({
+        return await prisma.$transaction(async (tx) => {
+            // Keep UserRole.BUYER until an admin approves the seller endorsement (PROMOTE_SELLER_ROLE_ON_APPROVAL).
+            const user = await tx.user.create({
+                data: {
+                    qcuIdNumber: cleanQcuId,
+                    email: normalizedEmail,
+                    fullName: data.fullName.trim(),
+                    memberType: data.memberType,
+                    qcuIdPhotoUrl: data.qcuIdPhotoUrl,
+                    liveSelfieUrl: data.liveSelfieUrl,
+                    passwordHash,
+                    role: UserRole.BUYER,
+                    verificationStatus: VerificationStatus.PENDING,
+                },
+                select: {
+                    id: true,
+                    qcuIdNumber: true,
+                    email: true,
+                    fullName: true,
+                    memberType: true,
+                    role: true,
+                    verificationStatus: true,
+                    createdAt: true,
+                },
+            });
+
+            let sellerProfile = null;
+            if (isSellerRegistration) {
+                sellerProfile = await tx.sellerProfile.create({
+                    data: {
+                        userId: user.id,
+                        sellerType: data.sellerType!,
+                        supportingDocumentUrl: data.supportingDocumentUrl!,
+                        verificationStatus: VerificationStatus.PENDING,
+                    },
+                    select: {
+                        id: true,
+                        sellerType: true,
+                        supportingDocumentUrl: true,
+                        verificationStatus: true,
+                        createdAt: true,
+                    },
+                });
+            }
+
+            return {
+                ...user,
+                sellerProfile,
+            };
+        });
+    }
+
+    // ==========================================
+    // SELLER ENDORSEMENT APPLICATION (Manuel)
+    // ==========================================
+
+    static async applyForSeller(
+        userId: string,
+        data: {
+            sellerType: SellerType;
+            supportingDocumentUrl: string;
+        }
+    ) {
+        return await prisma.$transaction(async (tx) => {
+            const user = await tx.user.findUnique({
+                where: { id: userId },
+                select: { id: true, memberType: true, role: true },
+            });
+
+            if (!user) {
+                throw new AppError("User account not found.", 404);
+            }
+
+            if (user.role === UserRole.ADMIN) {
+                throw new AppError(
+                    "Administrator accounts cannot apply as campus sellers.",
+                    403
+                );
+            }
+
+            if (user.memberType !== "STUDENT") {
+                throw new AppError(
+                    "Only students can apply as campus sellers. Faculty and staff must remain buyers.",
+                    400
+                );
+            }
+
+            const existingProfile = await tx.sellerProfile.findUnique({
+                where: { userId },
+            });
+
+            if (existingProfile) {
+                if (existingProfile.verificationStatus === VerificationStatus.VERIFIED) {
+                    throw new AppError("You already have an approved seller profile.", 409);
+                }
+
+                if (existingProfile.verificationStatus === VerificationStatus.PENDING) {
+                    throw new AppError(
+                        "Your seller application is currently pending administrator verification.",
+                        409
+                    );
+                }
+
+                return tx.sellerProfile.update({
+                    where: { id: existingProfile.id },
+                    data: {
+                        sellerType: data.sellerType,
+                        supportingDocumentUrl: data.supportingDocumentUrl,
+                        verificationStatus: VerificationStatus.PENDING,
+                        rejectionReason: null,
+                    },
+                });
+            }
+
+            return tx.sellerProfile.create({
+                data: {
+                    userId,
+                    sellerType: data.sellerType,
+                    supportingDocumentUrl: data.supportingDocumentUrl,
+                    verificationStatus: VerificationStatus.PENDING,
+                },
+            });
+        });
+    }
+
+    // ==========================================
+    // ACCOUNT STATUS TRACKING CRUD (Manuel)
+    // ==========================================
+
+    static async getAccountStatus(userId: string) {
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                qcuIdNumber: true,
+                fullName: true,
+                email: true,
+                memberType: true,
+                role: true,
+                verificationStatus: true,
+                rejectionReason: true,
+                verifiedAt: true,
+                createdAt: true,
+                sellerProfile: {
+                    select: {
+                        id: true,
+                        sellerType: true,
+                        supportingDocumentUrl: true,
+                        verificationStatus: true,
+                        rejectionReason: true,
+                        isPaymongoVerified: true,
+                        createdAt: true,
+                        updatedAt: true,
+                    },
+                },
+                _count: {
+                    select: { passkeys: true },
+                },
+            },
+        });
+
+        if (!user) {
+            throw new AppError("User account not found.", 404);
+        }
+
+        const canAccessMarketplace =
+            user.verificationStatus === VerificationStatus.VERIFIED;
+        const canSell =
+            user.role === UserRole.SELLER &&
+            user.sellerProfile?.verificationStatus === VerificationStatus.VERIFIED;
+
+        return {
+            userId: user.id,
+            qcuIdNumber: user.qcuIdNumber,
+            fullName: user.fullName,
+            email: user.email,
+            memberType: user.memberType,
+            role: user.role,
+            accountStatus: user.verificationStatus,
+            accountRejectionReason: user.rejectionReason,
+            accountVerifiedAt: user.verifiedAt,
+            sellerStatus: user.sellerProfile?.verificationStatus ?? null,
+            sellerProfile: user.sellerProfile,
+            registeredDeviceCount: user._count.passkeys,
+            canAccessMarketplace,
+            canSell,
+        };
+    }
+
+    /**
+     * Public pre-login status lookup (rate-limited; masks fullName to limit PII scraping).
+     */
+    static async checkPublicAccountStatus(identifier: string) {
+        const cleanIdentifier = identifier.trim();
+
+        const user = await prisma.user.findFirst({
+            where: {
+                OR: [
+                    { qcuIdNumber: cleanIdentifier },
+                    { email: { equals: cleanIdentifier.toLowerCase(), mode: "insensitive" } },
+                ],
+            },
+            select: {
+                qcuIdNumber: true,
+                fullName: true,
+                role: true,
+                verificationStatus: true,
+                rejectionReason: true,
+                verifiedAt: true,
+                createdAt: true,
+                sellerProfile: {
+                    select: {
+                        verificationStatus: true,
+                        rejectionReason: true,
+                    },
+                },
+            },
+        });
+
+        if (!user) {
+            throw new AppError(
+                "No registration record found for the provided identifier.",
+                404
+            );
+        }
+
+        return {
+            qcuIdNumber: user.qcuIdNumber,
+            fullName: maskFullName(user.fullName),
+            role: user.role,
+            verificationStatus: user.verificationStatus,
+            rejectionReason: user.rejectionReason,
+            verifiedAt: user.verifiedAt,
+            createdAt: user.createdAt,
+            sellerVerificationStatus: user.sellerProfile?.verificationStatus ?? null,
+            sellerRejectionReason: user.sellerProfile?.rejectionReason ?? null,
+        };
+    }
+
+    static async resubmitUserVerification(
+        userId: string,
+        data: { qcuIdPhotoUrl?: string; liveSelfieUrl?: string }
+    ) {
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, verificationStatus: true },
+        });
+
+        if (!user) {
+            throw new AppError("User account not found.", 404);
+        }
+
+        if (user.verificationStatus === VerificationStatus.VERIFIED) {
+            throw new AppError("Your account is already verified.", 400);
+        }
+
+        return prisma.user.update({
+            where: { id: userId },
             data: {
-                qcuIdNumber: data.qcuIdNumber,
-                email: data.email,
-                fullName: data.fullName,
-                memberType: data.memberType,
-                qcuIdPhotoUrl: data.qcuIdPhotoUrl,
-                liveSelfieUrl: data.liveSelfieUrl,
-                passwordHash,
+                ...(data.qcuIdPhotoUrl ? { qcuIdPhotoUrl: data.qcuIdPhotoUrl } : {}),
+                ...(data.liveSelfieUrl ? { liveSelfieUrl: data.liveSelfieUrl } : {}),
                 verificationStatus: VerificationStatus.PENDING,
+                rejectionReason: null,
+                verifiedByAdminId: null,
+                verifiedAt: null,
             },
             select: {
                 id: true,
                 qcuIdNumber: true,
-                email: true,
                 fullName: true,
-                memberType: true,
-                role: true,
                 verificationStatus: true,
-                createdAt: true,
+                updatedAt: true,
+            },
+        });
+    }
+
+    static async resubmitSellerVerification(
+        userId: string,
+        data: { sellerType?: SellerType; supportingDocumentUrl: string }
+    ) {
+        const sellerProfile = await prisma.sellerProfile.findUnique({
+            where: { userId },
+        });
+
+        if (!sellerProfile) {
+            throw new AppError(
+                "No seller profile found. Please register as a seller first.",
+                404
+            );
+        }
+
+        if (sellerProfile.verificationStatus === VerificationStatus.VERIFIED) {
+            throw new AppError("Your seller profile is already verified.", 400);
+        }
+
+        return prisma.sellerProfile.update({
+            where: { id: sellerProfile.id },
+            data: {
+                ...(data.sellerType ? { sellerType: data.sellerType } : {}),
+                supportingDocumentUrl: data.supportingDocumentUrl,
+                verificationStatus: VerificationStatus.PENDING,
+                rejectionReason: null,
+            },
+            select: {
+                id: true,
+                sellerType: true,
+                supportingDocumentUrl: true,
+                verificationStatus: true,
+                updatedAt: true,
             },
         });
     }
@@ -344,9 +668,11 @@ export class AuthService {
     // ==========================================
 
     static async updateEmail(userId: string, email: string) {
+        const normalizedEmail = email.trim().toLowerCase();
+
         const existing = await prisma.user.findFirst({
             where: {
-                email,
+                email: { equals: normalizedEmail, mode: "insensitive" },
                 NOT: { id: userId },
             },
             select: { id: true },
@@ -358,7 +684,7 @@ export class AuthService {
 
         const updated = await prisma.user.update({
             where: { id: userId },
-            data: { email },
+            data: { email: normalizedEmail },
             select: {
                 id: true,
                 email: true,

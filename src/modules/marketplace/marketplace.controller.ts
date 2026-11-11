@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
+import { getValidatedQuery } from "../../middlewares/validate.middleware";
 import { MarketplaceService } from "./marketplace.service";
 
 export class MarketplaceController {
@@ -30,9 +31,12 @@ export class MarketplaceController {
 
   // Seller: List own products
   static getSellerProducts = asyncHandler(async (req: Request, res: Response) => {
+    const query = getValidatedQuery<
+      Parameters<typeof MarketplaceService.getSellerProducts>[1]
+    >(req, res);
     const result = await MarketplaceService.getSellerProducts(
       req.user!.id,
-      req.query as any
+      query
     );
 
     res.status(200).json({

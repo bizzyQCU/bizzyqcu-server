@@ -26,28 +26,17 @@ declare global {
     }
 }
 
-/**
- * JWT Authentication Middleware
- */
-export const requireAuth = async (
-    req: Request,
-    _res: Response,
-    next: NextFunction
-) => {
-    const authHeader = req.headers.authorization;
-
+async function authenticateBearerHeader(
+    authHeader?: string
+): Promise<AuthenticatedUser> {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return next(
-            new AppError("Authentication required. Please log in.", 401)
-        );
+        throw new AppError("Authentication required. Please log in.", 401);
     }
 
     const token = authHeader.slice(7).trim();
 
     if (!token) {
-        return next(
-            new AppError("Malformed authentication token.", 401)
-        );
+        throw new AppError("Malformed authentication token.", 401);
     }
 
     try {
@@ -79,22 +68,52 @@ export const requireAuth = async (
             throw new AppError("User account not found.", 401);
         }
 
-        req.user = user;
-
-        return next();
+        return user;
     } catch (error) {
         if (error instanceof jwt.TokenExpiredError) {
-            return next(
-                new AppError("Session expired. Please log in again.", 401)
-            );
+            throw new AppError("Session expired. Please log in again.", 401);
         }
 
         if (error instanceof jwt.JsonWebTokenError) {
-            return next(
-                new AppError("Invalid authentication token.", 401)
-            );
+            throw new AppError("Invalid authentication token.", 401);
         }
 
+        throw error;
+    }
+}
+
+/**
+ * JWT Authentication Middleware
+ */
+export const requireAuth = async (
+    req: Request,
+    _res: Response,
+    next: NextFunction
+) => {
+    try {
+        req.user = await authenticateBearerHeader(req.headers.authorization);
+        return next();
+    } catch (error) {
+        return next(error);
+    }
+};
+
+/**
+ * Populates `req.user` when a Bearer token is sent, while allowing unauthenticated callers through.
+ */
+export const optionalAuth = async (
+    req: Request,
+    _res: Response,
+    next: NextFunction
+) => {
+    if (!req.headers.authorization) {
+        return next();
+    }
+
+    try {
+        req.user = await authenticateBearerHeader(req.headers.authorization);
+        return next();
+    } catch (error) {
         return next(error);
     }
 };

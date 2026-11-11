@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AUDIT_ACTIONS } from "../../utils/audit";
 import { paginationSchema } from "../../utils/pagination";
 
 /**
@@ -10,6 +11,14 @@ export {
   reviewUserVerificationSchema,
   reviewProductApprovalSchema,
 } from "./verification.validation";
+
+const optionalBlankToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  schema
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => (v === "" ? undefined : v));
+
+const RESERVED_AUDIT_ACTIONS = new Set<string>(Object.values(AUDIT_ACTIONS));
 
 export const COMPLAINT_STATUSES = [
   "OPEN",
@@ -40,9 +49,10 @@ export const createComplaintSchema = z.object({
 
 export const getComplaintsQuerySchema = z.object({
   query: paginationSchema.extend({
-    status: z.enum(COMPLAINT_STATUSES).optional(),
-    orderId: z.string().uuid("Invalid order ID").optional(),
-    complainantId: z.string().uuid("Invalid complainant ID").optional(),
+    status: optionalBlankToUndefined(z.enum(COMPLAINT_STATUSES)),
+    orderId: optionalBlankToUndefined(z.string().uuid("Invalid order ID")),
+    complainantId: optionalBlankToUndefined(z.string().uuid("Invalid complainant ID")),
+    search: optionalBlankToUndefined(z.string().trim()),
   }),
 });
 
@@ -68,18 +78,39 @@ export const resolveComplaintSchema = z.object({
 
 export const getAuditLogsQuerySchema = z.object({
   query: paginationSchema.extend({
-    subsystem: z.enum(["AUTH", "MARKETPLACE", "ORDERS", "ADMIN"]).optional(),
-    action: z.string().trim().optional(),
-    actorId: z.string().uuid("Invalid actor ID").optional(),
+    subsystem: optionalBlankToUndefined(
+      z.enum(["AUTH", "MARKETPLACE", "ORDERS", "ADMIN"])
+    ),
+    action: optionalBlankToUndefined(z.string().trim()),
+    actorId: optionalBlankToUndefined(z.string().uuid("Invalid actor ID")),
+  }),
+});
+
+export const createAuditLogSchema = z.object({
+  body: z.object({
+    subsystem: z.enum(["AUTH", "MARKETPLACE", "ORDERS", "ADMIN"]),
+    action: z
+      .string()
+      .trim()
+      .min(2, "Action must be at least 2 characters")
+      .max(100)
+      .refine(
+        (val) => !RESERVED_AUDIT_ACTIONS.has(val.toUpperCase()),
+        "System audit action names are reserved for server-side transactions."
+      ),
+    targetId: optionalBlankToUndefined(z.string().trim()),
+    details: z.record(z.string(), z.any()).optional(),
   }),
 });
 
 export const getTransactionLogsQuerySchema = z.object({
   query: paginationSchema.extend({
-    status: z.enum(["PENDING", "PAID", "FAILED", "CANCELLED"]).optional(),
-    method: z.enum(["CASH", "GCASH_PAYMONGO"]).optional(),
-    orderId: z.string().uuid("Invalid order ID").optional(),
-    search: z.string().trim().optional(),
+    status: optionalBlankToUndefined(
+      z.enum(["PENDING", "PAID", "FAILED", "CANCELLED"])
+    ),
+    method: optionalBlankToUndefined(z.enum(["CASH", "GCASH_PAYMONGO"])),
+    orderId: optionalBlankToUndefined(z.string().uuid("Invalid order ID")),
+    search: optionalBlankToUndefined(z.string().trim()),
   }),
 });
 
@@ -93,4 +124,5 @@ export type CreateComplaintInput = z.infer<typeof createComplaintSchema>["body"]
 export type GetComplaintsQuery = z.infer<typeof getComplaintsQuerySchema>["query"];
 export type ResolveComplaintInput = z.infer<typeof resolveComplaintSchema>["body"];
 export type GetAuditLogsQuery = z.infer<typeof getAuditLogsQuerySchema>["query"];
+export type CreateAuditLogInput = z.infer<typeof createAuditLogSchema>["body"];
 export type GetTransactionLogsQuery = z.infer<typeof getTransactionLogsQuerySchema>["query"];
