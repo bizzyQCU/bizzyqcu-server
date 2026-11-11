@@ -24,6 +24,7 @@ import {
 } from "../../utils/otp";
 
 import { sendOtpEmail } from "../../utils/email";
+import { isDevTestAccountDirectLoginEnabled } from "../../config/test-accounts";
 
 // Dummy bcrypt hash to neutralize user enumeration timing attacks
 const DUMMY_HASH = "$2a$12$e8uq0e1gYq03e.sT2c7GPe7wBskrJ9rMh7g8tE0o8J7H7B.d4B8eq";
@@ -451,6 +452,32 @@ export class AuthService {
     // PASSWORD LOGIN - REQUEST OTP (Vizconde)
     // ==========================================
 
+    private static buildAuthSession(user: {
+        id: string;
+        qcuIdNumber: string;
+        fullName: string;
+        email: string;
+        role: UserRole;
+        verificationStatus: VerificationStatus;
+    }) {
+        const accessToken = generateAccessToken(user.id);
+
+        return {
+            token: accessToken, // Compatible with client expectations
+            accessToken,
+            tokenType: "Bearer",
+            expiresIn: 3600,
+            user: {
+                id: user.id,
+                qcuIdNumber: user.qcuIdNumber,
+                fullName: user.fullName,
+                email: user.email,
+                role: user.role,
+                verificationStatus: user.verificationStatus,
+            },
+        };
+    }
+
     static async requestPasswordOtp(data: {
         qcuIdNumber: string;
         password: string;
@@ -461,8 +488,13 @@ export class AuthService {
             },
             select: {
                 id: true,
+                qcuIdNumber: true,
+                fullName: true,
                 email: true,
+                role: true,
+                verificationStatus: true,
                 passwordHash: true,
+                otpCode: true,
             },
         });
 
@@ -485,6 +517,21 @@ export class AuthService {
                 "Invalid QCU ID or password.",
                 401
             );
+        }
+
+        if (isDevTestAccountDirectLoginEnabled(user.qcuIdNumber)) {
+            if (user.otpCode) {
+                await prisma.user.update({
+                    where: { id: user.id },
+                    data: { otpCode: null, otpExpiresAt: null },
+                    select: { id: true },
+                });
+            }
+
+            return {
+                message: "Login successful.",
+                data: AuthService.buildAuthSession(user),
+            };
         }
 
         // Generate a new six-digit OTP
@@ -615,22 +662,7 @@ export class AuthService {
         }
 
         // Generate JWT only after successful OTP verification
-        const accessToken = generateAccessToken(user.id);
-
-        return {
-            token: accessToken, // Compatible with client expects
-            accessToken,
-            tokenType: "Bearer",
-            expiresIn: 3600,
-            user: {
-                id: user.id,
-                qcuIdNumber: user.qcuIdNumber,
-                fullName: user.fullName,
-                email: user.email,
-                role: user.role,
-                verificationStatus: user.verificationStatus,
-            },
-        };
+        return AuthService.buildAuthSession(user);
     }
 
     // ==========================================
