@@ -116,7 +116,7 @@ export class AuthService {
         email: string;
         emailVerificationToken: string;
         fullName: string;
-        memberType: QcuMemberType;
+        memberType?: QcuMemberType;
         qcuIdPhotoUrl: string;
         liveSelfieUrl: string;
         password?: string;
@@ -126,6 +126,14 @@ export class AuthService {
     }) {
         const cleanQcuId = data.qcuIdNumber.trim();
         const normalizedEmail = data.email.trim().toLowerCase();
+        const memberType = data.memberType ?? QcuMemberType.STUDENT;
+
+        if (memberType !== QcuMemberType.STUDENT) {
+            throw new AppError(
+                "Only QCU students can register. Faculty and staff registration is not allowed.",
+                400
+            );
+        }
 
         const emailClaim = claimRegistrationEmailToken(
             normalizedEmail,
@@ -160,13 +168,6 @@ export class AuthService {
             const isSellerRegistration = data.role === "SELLER";
 
             if (isSellerRegistration) {
-                if (data.memberType !== "STUDENT") {
-                    throw new AppError(
-                        "Only students can register as campus sellers. Faculty and staff must be buyers.",
-                        400
-                    );
-                }
-
                 if (!data.sellerType || !data.supportingDocumentUrl) {
                     throw new AppError(
                         "Seller registration requires seller type and supporting endorsement document URL.",
@@ -186,7 +187,7 @@ export class AuthService {
                         qcuIdNumber: cleanQcuId,
                         email: normalizedEmail,
                         fullName: data.fullName.trim(),
-                        memberType: data.memberType,
+                        memberType,
                         qcuIdPhotoUrl: data.qcuIdPhotoUrl,
                         liveSelfieUrl: data.liveSelfieUrl,
                         passwordHash,
