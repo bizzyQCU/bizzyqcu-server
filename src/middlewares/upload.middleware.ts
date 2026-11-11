@@ -31,3 +31,25 @@ export const upload = multer({
     }
   },
 });
+
+const VERIFICATION_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "application/pdf",
+]);
+
+/** Verification uploads allow PDFs for endorsements while constraining buffer count and size. */
+export const verificationUpload = multer({
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 1,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (VERIFICATION_MIME_TYPES.has(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new AppError("Upload a JPG, PNG, or PDF file.", 400) as any, false);
+    }
+  },
+});

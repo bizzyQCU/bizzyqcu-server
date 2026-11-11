@@ -34,6 +34,7 @@ import {
   getComplaintByIdSchema,
   resolveComplaintSchema,
   getAuditLogsQuerySchema,
+  createAuditLogSchema,
   getTransactionLogsQuerySchema,
   getTransactionByIdSchema,
 } from "./admin.validation";
@@ -57,6 +58,7 @@ router.post(
 /** GET /api/v1/admin/complaints/my - View current user's submitted tickets */
 router.get(
   "/complaints/my",
+  validate(getComplaintsQuerySchema),
   AdminController.getMyComplaints
 );
 
@@ -188,6 +190,13 @@ router.get(
   "/audit-logs",
   validate(getAuditLogsQuerySchema),
   AdminController.getAuditLogs
+);
+
+/** POST /api/v1/admin/audit-logs - Record manual administrative activity entry */
+router.post(
+  "/audit-logs",
+  validate(createAuditLogSchema),
+  AdminController.recordAuditLog
 );
 
 // ---------------------------------------------------------------------------

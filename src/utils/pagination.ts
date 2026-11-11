@@ -17,23 +17,31 @@ export interface PaginationMeta {
   hasPrevPage: boolean;
 }
 
+function normalizePagination(page: number = 1, limit: number = 20) {
+  const safePage = Math.max(1, Math.trunc(Number(page)) || 1);
+  const safeLimit = Math.min(100, Math.max(1, Math.trunc(Number(limit)) || 20));
+  return { page: safePage, limit: safeLimit };
+}
+
 export function buildPagination(
-  page: number,
-  limit: number,
-  total: number
+  page: number = 1,
+  limit: number = 20,
+  total: number = 0
 ): PaginationMeta {
-  const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+  const { page: p, limit: l } = normalizePagination(page, limit);
+  const totalPages = total === 0 ? 0 : Math.ceil(total / l);
   return {
-    page,
-    limit,
+    page: p,
+    limit: l,
     total,
     totalPages,
-    hasNextPage: page < totalPages,
-    hasPrevPage: page > 1,
+    hasNextPage: p < totalPages,
+    hasPrevPage: p > 1,
   };
 }
 
 /** Prisma skip/take for a validated page/limit pair. */
-export function skipTake(page: number, limit: number) {
-  return { skip: (page - 1) * limit, take: limit };
+export function skipTake(page: number = 1, limit: number = 20) {
+  const { page: p, limit: l } = normalizePagination(page, limit);
+  return { skip: (p - 1) * l, take: l };
 }

@@ -23,6 +23,7 @@ router.post(
 /** GET /api/v1/complaints/my - List user's submitted complaints */
 router.get(
   "/my",
+  validate(getComplaintsQuerySchema),
   AdminController.getMyComplaints
 );
 

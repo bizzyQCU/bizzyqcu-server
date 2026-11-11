@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
+import { getValidatedQuery } from "../../middlewares/validate.middleware";
 import { AdminService } from "./admin.service";
 import type {
   GetComplaintsQuery,
@@ -16,6 +17,7 @@ export class AdminController {
   static createComplaint = asyncHandler(async (req: Request, res: Response) => {
     const result = await AdminService.createComplaint({
       complainantId: req.user!.id,
+      userRole: req.user!.role,
       orderId: req.body.orderId,
       subject: req.body.subject,
       description: req.body.description,
@@ -30,9 +32,8 @@ export class AdminController {
 
   /** GET /admin/complaints (Admin view all tickets) */
   static getComplaints = asyncHandler(async (req: Request, res: Response) => {
-    const result = await AdminService.getComplaints(
-      req.query as unknown as GetComplaintsQuery
-    );
+    const query = getValidatedQuery<GetComplaintsQuery>(req, res);
+    const result = await AdminService.getComplaints(query);
     res.status(200).json({
       success: true,
       data: result.items,
@@ -42,9 +43,10 @@ export class AdminController {
 
   /** GET /complaints/my (User view their own tickets) */
   static getMyComplaints = asyncHandler(async (req: Request, res: Response) => {
+    const query = getValidatedQuery<GetComplaintsQuery>(req, res);
     const result = await AdminService.getMyComplaints(
       req.user!.id,
-      req.query as any
+      query
     );
     res.status(200).json({
       success: true,
@@ -87,13 +89,29 @@ export class AdminController {
 
   /** GET /admin/audit-logs */
   static getAuditLogs = asyncHandler(async (req: Request, res: Response) => {
-    const result = await AdminService.getAuditLogs(
-      req.query as unknown as GetAuditLogsQuery
-    );
+    const query = getValidatedQuery<GetAuditLogsQuery>(req, res);
+    const result = await AdminService.getAuditLogs(query);
     res.status(200).json({
       success: true,
       data: result.items,
       ...result,
+    });
+  });
+
+  /** POST /admin/audit-logs (Record a manual administrative activity entry) */
+  static recordAuditLog = asyncHandler(async (req: Request, res: Response) => {
+    const result = await AdminService.recordAuditLog({
+      actorId: req.user!.id,
+      subsystem: req.body.subsystem,
+      action: req.body.action,
+      targetId: req.body.targetId,
+      details: req.body.details,
+      ipAddress: req.ip,
+    });
+    res.status(201).json({
+      success: true,
+      message: "System activity logged successfully.",
+      data: result,
     });
   });
 
@@ -103,9 +121,8 @@ export class AdminController {
 
   /** GET /admin/transactions */
   static getTransactionLogs = asyncHandler(async (req: Request, res: Response) => {
-    const result = await AdminService.getTransactionLogs(
-      req.query as unknown as GetTransactionLogsQuery
-    );
+    const query = getValidatedQuery<GetTransactionLogsQuery>(req, res);
+    const result = await AdminService.getTransactionLogs(query);
     res.status(200).json({
       success: true,
       data: result.items,

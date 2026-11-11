@@ -3,10 +3,18 @@ import { Router } from "express";
 import { AuthController } from "./auth.controller";
 
 import { validate } from "../../middlewares/validate.middleware";
-import { requireAuth } from "../../middlewares/auth.middleware";
+import { optionalAuth, requireAuth } from "../../middlewares/auth.middleware";
+import { verificationUpload } from "../../middlewares/upload.middleware";
 
 import {
     registerUserSchema,
+    registerSellerSchema,
+    resubmitUserVerificationSchema,
+    resubmitSellerVerificationSchema,
+    checkAccountStatusSchema,
+    verificationUploadSchema,
+    deviceIdSchema,
+    updateDeviceSchema,
     passwordLoginSchema,
     verifyPasswordOtpSchema,
     webauthnRegisterOptionsSchema,
@@ -21,22 +29,118 @@ import {
 import {
     requestOtpLimiter,
     verifyOtpLimiter,
+    verificationUploadLimiter,
+    statusLookupLimiter,
+    webauthnLimiter,
 } from "../../middlewares/otp-rate-limit.middleware";
 
 const router = Router();
 
 // ==========================================
-// 1. REGISTRATION & PASSWORD + OTP FALLBACK
+// 1. REGISTRATION & SELLER APPLICATIONS (Manuel & Vizconde)
 // ==========================================
 
-// Registration (Manuel & Vizconde)
+// Public so pre-signup ID/selfie uploads work; rate/size/type/magic-byte checked and stored as authenticated assets.
+router.post(
+    "/uploads/verification",
+    verificationUploadLimiter,
+    verificationUpload.single("file"),
+    validate(verificationUploadSchema),
+    AuthController.uploadVerificationDocument
+);
+
 router.post(
     "/register",
     validate(registerUserSchema),
     AuthController.register
 );
 
-// Password login: verify credentials and send OTP
+router.post(
+    "/seller-application",
+    requireAuth,
+    validate(registerSellerSchema),
+    AuthController.applyForSeller
+);
+
+router.post(
+    "/seller/register",
+    requireAuth,
+    validate(registerSellerSchema),
+    AuthController.applyForSeller
+);
+
+// ==========================================
+// 2. ACCOUNT STATUS TRACKING CRUD (Manuel)
+// ==========================================
+
+router.get(
+    "/account-status",
+    requireAuth,
+    AuthController.getAccountStatus
+);
+
+router.get(
+    "/status",
+    requireAuth,
+    AuthController.getAccountStatus
+);
+
+router.post(
+    "/check-status",
+    statusLookupLimiter,
+    validate(checkAccountStatusSchema),
+    AuthController.checkPublicAccountStatus
+);
+
+router.post(
+    "/resubmit-verification",
+    requireAuth,
+    validate(resubmitUserVerificationSchema),
+    AuthController.resubmitUserVerification
+);
+
+router.post(
+    "/seller/resubmit",
+    requireAuth,
+    validate(resubmitSellerVerificationSchema),
+    AuthController.resubmitSellerVerification
+);
+
+// ==========================================
+// 3. REGISTERED DEVICE MANAGEMENT CRUD (Manuel)
+// ==========================================
+
+router.get(
+    "/devices",
+    requireAuth,
+    AuthController.listDevices
+);
+
+router.get(
+    "/devices/:id",
+    requireAuth,
+    validate(deviceIdSchema),
+    AuthController.getDevice
+);
+
+router.patch(
+    "/devices/:id",
+    requireAuth,
+    validate(updateDeviceSchema),
+    AuthController.updateDevice
+);
+
+router.delete(
+    "/devices/:id",
+    requireAuth,
+    validate(deviceIdSchema),
+    AuthController.deleteDevice
+);
+
+// ==========================================
+// 4. PASSWORD + OTP FALLBACK (Vizconde)
+// ==========================================
+
 router.post(
     "/login/password",
     requestOtpLimiter,
@@ -44,7 +148,6 @@ router.post(
     AuthController.requestPasswordOtp
 );
 
-// OTP verification: consume OTP and issue JWT
 router.post(
     "/login/otp/verify",
     verifyOtpLimiter,
@@ -53,56 +156,55 @@ router.post(
 );
 
 // ==========================================
-// 2. WEBAUTHN / PASSKEY REGISTRATION & LOGIN
+// 5. WEBAUTHN / PASSKEY REGISTRATION & LOGIN
 // ==========================================
 
-// WebAuthn Passkey Registration Options
 router.post(
     "/webauthn/register/options",
+    webauthnLimiter,
+    optionalAuth,
     validate(webauthnRegisterOptionsSchema),
     AuthController.generateRegistrationOptions
 );
 
-// WebAuthn Passkey Registration Verification
 router.post(
     "/webauthn/register/verify",
+    webauthnLimiter,
+    optionalAuth,
     validate(webauthnRegisterVerifySchema),
     AuthController.verifyRegistration
 );
 
-// WebAuthn Passkey Authentication Options (Login)
 router.post(
     "/webauthn/login/options",
+    webauthnLimiter,
     validate(webauthnLoginOptionsSchema),
     AuthController.generateAuthenticationOptions
 );
 
-// WebAuthn Passkey Authentication Verification (Login)
 router.post(
     "/webauthn/login/verify",
+    webauthnLimiter,
     validate(webauthnLoginVerifySchema),
     AuthController.verifyAuthentication
 );
 
 // ==========================================
-// 3. AUTHENTICATED PROFILE & PASSKEY MANAGEMENT
+// 6. AUTHENTICATED PROFILE, SETTINGS & PASSKEY COMPATIBILITY
 // ==========================================
 
-// Authenticated user profile
 router.get(
     "/profile",
     requireAuth,
     AuthController.getProfile
 );
 
-// List registered passkeys for current user
 router.get(
     "/webauthn/passkeys",
     requireAuth,
     AuthController.listPasskeys
 );
 
-// Delete/revoke a passkey
 router.delete(
     "/webauthn/passkeys/:id",
     requireAuth,
@@ -110,7 +212,6 @@ router.delete(
     AuthController.deletePasskey
 );
 
-// Update/change password
 router.patch(
     "/password",
     requireAuth,
@@ -118,7 +219,6 @@ router.patch(
     AuthController.changePassword
 );
 
-// Update user email
 router.patch(
     "/email",
     requireAuth,
