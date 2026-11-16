@@ -459,8 +459,14 @@ export class AuthService {
         email: string;
         role: UserRole;
         verificationStatus: VerificationStatus;
+        sellerProfile?: { id: string; verificationStatus: VerificationStatus } | null;
+        hasSellerProfile?: boolean;
     }) {
         const accessToken = generateAccessToken(user.id);
+        const hasSellerProfile =
+            typeof user.hasSellerProfile === "boolean"
+                ? user.hasSellerProfile
+                : Boolean(user.sellerProfile);
 
         return {
             token: accessToken, // Compatible with client expectations
@@ -474,6 +480,8 @@ export class AuthService {
                 email: user.email,
                 role: user.role,
                 verificationStatus: user.verificationStatus,
+                hasSellerProfile,
+                sellerStatus: user.sellerProfile?.verificationStatus ?? null,
             },
         };
     }
@@ -481,6 +489,7 @@ export class AuthService {
     static async requestPasswordOtp(data: {
         qcuIdNumber: string;
         password: string;
+        portal?: "buyer" | "seller";
     }) {
         const user = await prisma.user.findUnique({
             where: {
@@ -495,6 +504,12 @@ export class AuthService {
                 verificationStatus: true,
                 passwordHash: true,
                 otpCode: true,
+                sellerProfile: {
+                    select: {
+                        id: true,
+                        verificationStatus: true,
+                    },
+                },
             },
         });
 
@@ -516,6 +531,13 @@ export class AuthService {
             throw new AppError(
                 "Invalid QCU ID or password.",
                 401
+            );
+        }
+
+        if (data.portal === "seller" && user.role === UserRole.BUYER && !user.sellerProfile) {
+            throw new AppError(
+                "This account is registered as a buyer. Please use the buyer login or register for a seller account.",
+                403
             );
         }
 
@@ -589,6 +611,7 @@ export class AuthService {
     static async verifyPasswordOtp(data: {
         qcuIdNumber: string;
         otp: string;
+        portal?: "buyer" | "seller";
     }) {
         const user = await prisma.user.findUnique({
             where: {
@@ -603,6 +626,12 @@ export class AuthService {
                 verificationStatus: true,
                 otpCode: true,
                 otpExpiresAt: true,
+                sellerProfile: {
+                    select: {
+                        id: true,
+                        verificationStatus: true,
+                    },
+                },
             },
         });
 
@@ -636,6 +665,13 @@ export class AuthService {
             throw new AppError(
                 "Invalid or expired verification code.",
                 401
+            );
+        }
+
+        if (data.portal === "seller" && user.role === UserRole.BUYER && !user.sellerProfile) {
+            throw new AppError(
+                "This account is registered as a buyer. Please use the buyer login or register for a seller account.",
+                403
             );
         }
 

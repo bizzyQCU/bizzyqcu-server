@@ -7,6 +7,7 @@ import {
   searchProductsSchema,
   setStockSchema,
   setAvailabilitySchema,
+  sellerAnalyticsSchema,
 } from "./catalog.validation";
 
 const router = Router();
@@ -25,6 +26,6 @@ router.patch(
   CatalogController.setAvailability
 );
 router.get("/seller/dashboard", ...seller, CatalogController.getSellerDashboard);
-router.get("/seller/analytics", ...seller, CatalogController.getSellerAnalytics);
+router.get("/seller/analytics", ...seller, validate(sellerAnalyticsSchema), CatalogController.getSellerAnalytics);
 
 export default router;

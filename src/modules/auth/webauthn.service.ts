@@ -304,12 +304,20 @@ export class WebAuthnService {
     // ========================================
 
     static async generateAuthenticationOptions(
-        qcuIdNumber: string
+        qcuIdNumber: string,
+        portal?: "buyer" | "seller"
     ) {
         const user = await prisma.user.findUnique({
             where: { qcuIdNumber },
             select: {
                 id: true,
+                role: true,
+                sellerProfile: {
+                    select: {
+                        id: true,
+                        verificationStatus: true,
+                    },
+                },
                 passkeys: {
                     select: {
                         id: true,
@@ -323,6 +331,13 @@ export class WebAuthnService {
             throw new AppError(
                 "No registered passkey found for this account.",
                 404
+            );
+        }
+
+        if (portal === "seller" && user.role === UserRole.BUYER && !user.sellerProfile) {
+            throw new AppError(
+                "This account is registered as a buyer. Please use the buyer login or register for a seller account.",
+                403
             );
         }
 
@@ -349,12 +364,19 @@ export class WebAuthnService {
 
     static async verifyAuthentication(
         qcuIdNumber: string,
-        response: AuthenticationResponseJSON
+        response: AuthenticationResponseJSON,
+        portal?: "buyer" | "seller"
     ) {
         const user = await prisma.user.findUnique({
             where: { qcuIdNumber },
             include: {
                 passkeys: true,
+                sellerProfile: {
+                    select: {
+                        id: true,
+                        verificationStatus: true,
+                    },
+                },
             },
         });
 
@@ -362,6 +384,13 @@ export class WebAuthnService {
             throw new AppError(
                 "Invalid passkey authentication.",
                 401
+            );
+        }
+
+        if (portal === "seller" && user.role === UserRole.BUYER && !user.sellerProfile) {
+            throw new AppError(
+                "This account is registered as a buyer. Please use the buyer login or register for a seller account.",
+                403
             );
         }
 
@@ -479,6 +508,8 @@ export class WebAuthnService {
                 email: user.email,
                 role: user.role,
                 verificationStatus: user.verificationStatus,
+                hasSellerProfile: Boolean(user.sellerProfile),
+                sellerStatus: user.sellerProfile?.verificationStatus ?? null,
             },
         };
     }

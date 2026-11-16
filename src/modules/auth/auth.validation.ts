@@ -160,6 +160,7 @@ export const passwordLoginSchema = z.object({
     body: z.object({
         qcuIdNumber: z.string().trim().min(1, "QCU ID is required"),
         password: z.string().min(8, "Password is required"),
+        portal: z.enum(["buyer", "seller"]).optional(),
     }),
 });
 
@@ -167,6 +168,7 @@ export const verifyPasswordOtpSchema = z.object({
     body: z.object({
         qcuIdNumber: z.string().trim().min(1, "QCU ID is required"),
         otp: z.string().trim().regex(/^\d{6}$/, "OTP must contain exactly 6 digits"),
+        portal: z.enum(["buyer", "seller"]).optional(),
     }),
 });
 
@@ -174,6 +176,7 @@ export const loginUserSchema = z.object({
     body: z.object({
         qcuIdNumber: z.string().trim().min(1, "QCU ID is required"),
         password: z.string().optional(),
+        portal: z.enum(["buyer", "seller"]).optional(),
     }),
 });
 
@@ -198,6 +201,7 @@ export const webauthnRegisterVerifySchema = z.object({
 export const webauthnLoginOptionsSchema = z.object({
     body: z.object({
         qcuIdNumber: z.string().trim().min(1, "QCU ID is required"),
+        portal: z.enum(["buyer", "seller"]).optional(),
     }),
 });
 
@@ -205,6 +209,7 @@ export const webauthnLoginVerifySchema = z.object({
     body: z.object({
         qcuIdNumber: z.string().trim().min(1, "QCU ID is required"),
         response: z.record(z.string(), z.any()),
+        portal: z.enum(["buyer", "seller"]).optional(),
     }),
 });
 

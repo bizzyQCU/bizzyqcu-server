@@ -285,7 +285,8 @@ export class AuthController {
     static generateAuthenticationOptions = asyncHandler(
         async (req: Request, res: Response) => {
             const options = await WebAuthnService.generateAuthenticationOptions(
-                req.body.qcuIdNumber
+                req.body.qcuIdNumber,
+                req.body.portal
             );
 
             res.status(200).json({
@@ -299,7 +300,8 @@ export class AuthController {
         async (req: Request, res: Response) => {
             const result = await WebAuthnService.verifyAuthentication(
                 req.body.qcuIdNumber,
-                req.body.response
+                req.body.response,
+                req.body.portal
             );
 
             res.status(200).json({
