@@ -31,11 +31,19 @@ export const setAvailabilitySchema = z.object({
   body: z.object({ isAvailable: z.boolean() }),
 });
 
-const sellerAnalyticsQuery = z.object({
-  from: z.string().trim().min(1).optional(),
-  to: z.string().trim().min(1).optional(),
-  groupBy: z.enum(["day", "week", "month"]).default("day"),
-});
+const sellerAnalyticsQuery = z
+  .object({
+    from: z.string().trim().min(1).optional(),
+    to: z.string().trim().min(1).optional(),
+    start: z.string().trim().min(1).optional(),
+    end: z.string().trim().min(1).optional(),
+    groupBy: z.enum(["day", "week", "month"]).default("day"),
+  })
+  .transform((data) => ({
+    ...data,
+    from: data.from || data.start,
+    to: data.to || data.end,
+  }));
 
 export const sellerAnalyticsSchema = z.object({ query: sellerAnalyticsQuery });
 export const parseSellerAnalyticsQuery = (query: unknown) => sellerAnalyticsQuery.parse(query);

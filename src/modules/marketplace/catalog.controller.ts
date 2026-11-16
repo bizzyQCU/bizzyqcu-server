@@ -36,7 +36,13 @@ export class CatalogController {
   });
 
   static getSellerAnalytics = asyncHandler(async (req: Request, res: Response) => {
-    const query = parseSellerAnalyticsQuery(req.query);
+    const query = (res.locals.validatedQuery ?? parseSellerAnalyticsQuery(req.query)) as {
+      from?: string;
+      to?: string;
+      start?: string;
+      end?: string;
+      groupBy?: "day" | "week" | "month";
+    };
     const data = await DashboardService.getSellerAnalytics(req.user!.id, query);
     res.status(200).json({ success: true, data });
   });
